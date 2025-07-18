@@ -1,0 +1,8 @@
+# Docker Compose configuration for Gravity Video Downloader
+version: '3.8'
+
+services:
+  # Services will be configured in later tasks
+  placeholder:
+    image: alpine:latest
+    command: echo "Docker Compose placeholder"

@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gravity Video Downloader v0.1</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div id="app">
+        <header class="header">
+            <h1 class="title">🌌 Gravity Video Downloader</h1>
+            <p class="subtitle">多平台视频下载工具 - 支持 Bilibili, YouTube</p>
+        </header>
+
+        <main class="main-content">
+            <!-- URL Input and Video Info Section -->
+            <section class="url-section">
+                <div class="input-group">
+                    <label for="video-url" class="input-label">视频链接</label>
+                    <div class="input-wrapper">
+                        <input 
+                            type="url" 
+                            id="video-url" 
+                            class="url-input" 
+                            placeholder="请粘贴 Bilibili 或 YouTube 视频链接..."
+                            autocomplete="off"
+                        >
+                        <button id="parse-btn" class="btn btn-primary">解析</button>
+                    </div>
+                    <div id="url-error" class="error-message" style="display: none;"></div>
+                </div>
+
+                <!-- Video Info Display (hidden initially) -->
+                <div id="video-info" class="video-info" style="display: none;">
+                    <h3 class="info-title">视频信息</h3>
+                    <div class="info-content">
+                        <p id="video-title" class="video-title"></p>
+                        <p id="video-duration" class="video-duration"></p>
+                        <div class="format-options">
+                            <h4>下载选项</h4>
+                            <div class="option-group">
+                                <label class="option-label">质量选择</label>
+                                <select id="quality-select" class="quality-select">
+                                    <option value="best">最佳质量</option>
+                                </select>
+                            </div>
+                            <div class="option-group">
+                                <label class="option-label">格式选择</label>
+                                <div class="format-choices">
+                                    <label class="radio-label">
+                                        <input type="radio" name="format" value="video" checked>
+                                        <span>视频</span>
+                                    </label>
+                                    <label class="radio-label">
+                                        <input type="radio" name="format" value="audio">
+                                        <span>仅音频 (MP3)</span>
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="option-group audio-format-group" style="display: none;">
+                                <label class="option-label">音频格式</label>
+                                <select id="audio-format-select" class="audio-format-select">
+                                    <option value="mp3">MP3</option>
+                                    <option value="m4a">M4A</option>
+                                </select>
+                            </div>
+                        </div>
+                        <button id="download-btn" class="btn btn-success">开始下载</button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Download Status Section -->
+            <section class="status-section">
+                <h3 class="section-title">下载状态</h3>
+                <div id="download-status" class="download-status">
+                    <div class="status-empty">
+                        <p>暂无下载任务</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Download History Section -->
+            <section class="history-section">
+                <h3 class="section-title">下载历史</h3>
+                <div id="download-history" class="download-history">
+                    <div class="history-empty">
+                        <p>暂无下载历史</p>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <!-- Loading Overlay -->
+        <div id="loading-overlay" class="loading-overlay" style="display: none;">
+            <div class="loading-spinner"></div>
+            <p class="loading-text">解析中...</p>
+        </div>
+
+        <!-- Error Modal -->
+        <div id="error-modal" class="modal" style="display: none;">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>错误</h3>
+                    <button class="modal-close" onclick="hideErrorModal()">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <p id="error-message"></p>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-primary" onclick="hideErrorModal()">确定</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js?v=1.3"></script>
+</body>
+</html>
