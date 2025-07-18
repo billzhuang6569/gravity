@@ -1,0 +1,135 @@
+# 自定义端口的 Docker Compose 配置
+# 使用方法: docker-compose -f docker-compose.custom-ports.yml up -d
+
+version: '3.8'
+
+services:
+  # Redis service
+  redis:
+    image: redis:7-alpine
+    container_name: gravity-redis
+    restart: unless-stopped
+    ports:
+      - "16379:6379"  # 自定义端口 16379
+    command: redis-server --requirepass ${REDIS_PASSWORD:-gravitysecret}
+    volumes:
+      - redis_data:/data
+    networks:
+      - gravity-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # API service
+  api:
+    build: 
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: gravity-api
+    restart: unless-stopped
+    ports:
+      - "18001:8000"  # 自定义端口 18001
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-gravitysecret}
+      - DOWNLOADS_PATH=/opt/gravity/downloads
+      - TEMP_PATH=/opt/gravity/temp
+      - DEBUG=false
+    volumes:
+      - downloads_data:/opt/gravity/downloads
+      - temp_data:/opt/gravity/temp
+      - logs_data:/opt/gravity/logs
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - gravity-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Celery worker service
+  worker:
+    build: 
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: gravity-worker
+    restart: unless-stopped
+    command: python worker.py
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-gravitysecret}
+      - DOWNLOADS_PATH=/opt/gravity/downloads
+      - TEMP_PATH=/opt/gravity/temp
+      - DEBUG=false
+    volumes:
+      - downloads_data:/opt/gravity/downloads
+      - temp_data:/opt/gravity/temp
+      - logs_data:/opt/gravity/logs
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - gravity-network
+
+  # Celery beat service
+  beat:
+    build: 
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: gravity-beat
+    restart: unless-stopped
+    command: python beat.py
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-gravitysecret}
+      - DOWNLOADS_PATH=/opt/gravity/downloads
+      - TEMP_PATH=/opt/gravity/temp
+      - DEBUG=false
+    volumes:
+      - downloads_data:/opt/gravity/downloads
+      - temp_data:/opt/gravity/temp
+      - logs_data:/opt/gravity/logs
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - gravity-network
+
+  # Frontend service
+  frontend:
+    image: nginx:alpine
+    container_name: gravity-frontend
+    restart: unless-stopped
+    ports:
+      - "8080:80"    # 自定义端口 8080 (HTTP)
+      - "8443:443"   # 自定义端口 8443 (HTTPS)
+    volumes:
+      - ../frontend:/usr/share/nginx/html/app
+      - ./nginx.custom-ports.conf:/etc/nginx/nginx.conf
+      - ./ssl:/etc/nginx/ssl
+    depends_on:
+      - api
+    networks:
+      - gravity-network
+
+volumes:
+  redis_data:
+    driver: local
+  downloads_data:
+    driver: local
+  temp_data:
+    driver: local
+  logs_data:
+    driver: local
+
+networks:
+  gravity-network:
+    driver: bridge
