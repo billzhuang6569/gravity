@@ -125,14 +125,18 @@ async def submit_download(request: DownloadRequest) -> TaskResponse:
         task_id = str(uuid.uuid4())
         
         # Create task in storage
+        logger.info(f"Creating task {task_id} in storage...")
         task = task_storage.create_task(
             task_id=task_id,
             url=request.url,
             options=request.model_dump()
         )
+        logger.info(f"Task {task_id} created in storage successfully")
         
         # Submit Celery task
-        download_video_task.delay(task_id, request.url, request.model_dump())
+        logger.info(f"Submitting Celery task {task_id}...")
+        celery_result = download_video_task.delay(task_id, request.url, request.model_dump())
+        logger.info(f"Celery task {task_id} submitted with result ID: {celery_result.id}")
         
         logger.info(f"Download task {task_id} submitted successfully")
         

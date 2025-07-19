@@ -66,9 +66,13 @@ class TaskStorage:
                 updated_at=datetime.now()
             )
             
-            # For now, just log the task creation - Redis storage will be handled by Celery
-            # This avoids the complex event loop issues
-            logger.info(f"Task {task_id} created in memory, will be stored by Celery worker")
+            # Store task in a simple in-memory cache for now
+            # This avoids Redis async issues while still allowing task queries
+            if not hasattr(self, '_task_cache'):
+                self._task_cache = {}
+            
+            self._task_cache[task_id] = task
+            logger.info(f"Task {task_id} created and stored in memory cache")
             
             logger.info(f"Task {task_id} created successfully")
             return task
@@ -88,13 +92,46 @@ class TaskStorage:
             DownloadTask or None: Task object if found, None otherwise
         """
         try:
-            # For now, return a mock task to avoid Redis issues
-            # In production, this would query Celery result backend
-            from app.celery_app import celery_app
+            # First check memory cache
+            if hasattr(self, '_task_cache') and task_id in self._task_cache:
+                cached_task = self._task_cache[task_id]
+                logger.info(f"Found task {task_id} in memory cache")
+                
+                # Try to get updated status from Celery
+                try:
+                    from app.celery_app import celery_app
+                    result = celery_app.AsyncResult(task_id)
+                    
+                    # Update task status based on Celery result
+                    if result.state == 'PENDING':
+                        cached_task.status = TaskStatus.PENDING
+                        cached_task.progress = "排队中..."
+                    elif result.state == 'SUCCESS':
+                        task_data = result.result or {}
+                        cached_task.status = TaskStatus.COMPLETED
+                        cached_task.progress = "已完成"
+                        cached_task.title = task_data.get('title', cached_task.title)
+                        cached_task.download_url = task_data.get('download_url', '')
+                    elif result.state == 'FAILURE':
+                        cached_task.status = TaskStatus.FAILED
+                        cached_task.progress = "失败"
+                        cached_task.error_message = str(result.info)
+                    else:
+                        cached_task.status = TaskStatus.DOWNLOADING
+                        cached_task.progress = str(result.info) if result.info else "下载中..."
+                    
+                    cached_task.updated_at = datetime.now()
+                    return cached_task
+                    
+                except Exception as e:
+                    logger.warning(f"Could not get Celery status for {task_id}, using cached task: {e}")
+                    return cached_task
             
-            # Try to get task result from Celery
+            # If not in cache, try Celery only
             try:
+                from app.celery_app import celery_app
                 result = celery_app.AsyncResult(task_id)
+                
                 if result.state == 'PENDING':
                     return DownloadTask(
                         task_id=task_id,
@@ -109,49 +146,28 @@ class TaskStorage:
                         created_at=datetime.now(),
                         updated_at=datetime.now()
                     )
-                elif result.state == 'SUCCESS':
-                    task_data = result.result or {}
+                elif result.state in ['SUCCESS', 'FAILURE', 'PROGRESS']:
+                    # Task exists in Celery but not in cache
+                    task_data = result.result or {} if result.state == 'SUCCESS' else {}
                     return DownloadTask(
                         task_id=task_id,
                         url=task_data.get('url', ''),
-                        status=TaskStatus.COMPLETED,
-                        progress="已完成",
+                        status=TaskStatus.COMPLETED if result.state == 'SUCCESS' else 
+                               TaskStatus.FAILED if result.state == 'FAILURE' else TaskStatus.DOWNLOADING,
+                        progress="已完成" if result.state == 'SUCCESS' else 
+                                "失败" if result.state == 'FAILURE' else str(result.info),
                         title=task_data.get('title', ''),
                         file_path=task_data.get('file_path', ''),
                         download_url=task_data.get('download_url', ''),
-                        error_message="",
-                        options=DownloadOptions(),
-                        created_at=datetime.now(),
-                        updated_at=datetime.now()
-                    )
-                elif result.state == 'FAILURE':
-                    return DownloadTask(
-                        task_id=task_id,
-                        url="",
-                        status=TaskStatus.FAILED,
-                        progress="失败",
-                        title="",
-                        file_path="",
-                        download_url="",
-                        error_message=str(result.info),
+                        error_message=str(result.info) if result.state == 'FAILURE' else "",
                         options=DownloadOptions(),
                         created_at=datetime.now(),
                         updated_at=datetime.now()
                     )
                 else:
-                    return DownloadTask(
-                        task_id=task_id,
-                        url="",
-                        status=TaskStatus.DOWNLOADING,
-                        progress=str(result.info) if result.info else "下载中...",
-                        title="",
-                        file_path="",
-                        download_url="",
-                        error_message="",
-                        options=DownloadOptions(),
-                        created_at=datetime.now(),
-                        updated_at=datetime.now()
-                    )
+                    logger.warning(f"Task {task_id} not found in cache or Celery")
+                    return None
+                    
             except Exception as e:
                 logger.warning(f"Could not get Celery task status for {task_id}: {e}")
                 return None

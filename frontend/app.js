@@ -302,7 +302,9 @@ class DownloadComponent {
         try {
             this.setDownloadLoading(true);
             
+            console.log('Submitting download with options:', options);
             const response = await this.api.submitDownload(currentVideoInfo.url, options);
+            console.log('Download submitted successfully:', response);
             
             // Add to active downloads
             activeDownloads.set(response.task_id, {
