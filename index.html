@@ -3,7 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gravity Video Downloader - 简化版</title>
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <title>Gravity Video Downloader - 最新版</title>
     <style>
         * {
             margin: 0;
@@ -213,7 +216,7 @@
     <div class="container">
         <div class="header">
             <h1>🎬 Gravity</h1>
-            <p>现代化视频下载器</p>
+            <p>现代化视频下载器 - 最新版</p>
         </div>
 
         <form id="downloadForm">
@@ -227,6 +230,8 @@
                 <select id="format" name="format">
                     <option value="best">最佳质量</option>
                     <option value="worst">最低质量</option>
+                    <option value="360p">360p</option>
+                    <option value="480p">480p</option>
                     <option value="720p">720p</option>
                     <option value="1080p">1080p</option>
                 </select>
@@ -370,26 +375,52 @@
             }
         }
 
-        // 下载文件
+        // 下载文件 - 修复版本
         async function downloadFile(taskId) {
             try {
+                console.log('开始下载文件，taskId:', taskId);
                 const response = await fetch(`${API_BASE}/downloads/${taskId}`);
                 
                 if (response.ok) {
+                    // 从响应头获取文件名
+                    const contentDisposition = response.headers.get('Content-Disposition');
+                    console.log('Content-Disposition:', contentDisposition);
+                    
+                    let filename = `download-${taskId}`;
+                    
+                    if (contentDisposition) {
+                        // 解析 filename*=UTF-8'' 格式
+                        const filenameMatch = contentDisposition.match(/filename\*=UTF-8''([^;]+)/);
+                        if (filenameMatch) {
+                            filename = decodeURIComponent(filenameMatch[1]);
+                            console.log('解析到的文件名:', filename);
+                        } else {
+                            // 尝试解析普通的 filename 格式
+                            const simpleMatch = contentDisposition.match(/filename="([^"]+)"/);
+                            if (simpleMatch) {
+                                filename = simpleMatch[1];
+                                console.log('解析到的文件名:', filename);
+                            }
+                        }
+                    }
+                    
                     const blob = await response.blob();
                     const url = window.URL.createObjectURL(blob);
                     const a = document.createElement('a');
                     a.href = url;
-                    a.download = `video-${taskId}.mp4`;
+                    a.download = filename;
+                    console.log('设置下载文件名:', filename);
                     document.body.appendChild(a);
                     a.click();
                     window.URL.revokeObjectURL(url);
                     document.body.removeChild(a);
+                    showMessage('文件下载成功！');
                 } else {
                     const result = await response.json();
                     throw new Error(result.error || '下载失败');
                 }
             } catch (error) {
+                console.error('下载错误:', error);
                 showMessage(error.message, 'error');
             }
         }
