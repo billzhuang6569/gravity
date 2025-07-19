@@ -36,12 +36,12 @@ export class Database {
 
   private async init(): Promise<void> {
     // 确保数据目录存在
-    const dataDir = path.dirname(process.env.DATABASE_URL || './data/downloads.db');
+    const dataDir = path.dirname(process.env['DATABASE_URL'] || './data/downloads.db');
     await fs.ensureDir(dataDir);
 
     // 打开数据库连接
     this.db = await open({
-      filename: process.env.DATABASE_URL || './data/downloads.db',
+      filename: process.env['DATABASE_URL'] || './data/downloads.db',
       driver: sqlite3.Database
     });
 

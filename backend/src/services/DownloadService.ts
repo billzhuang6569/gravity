@@ -25,7 +25,7 @@ export interface DownloadOptions {
 }
 
 export class DownloadService {
-  private static downloadPath = process.env.DOWNLOAD_PATH || './downloads';
+  private static downloadPath = process.env['DOWNLOAD_PATH'] || './downloads';
 
   // 获取视频信息
   public static async getVideoInfo(url: string): Promise<VideoInfo> {

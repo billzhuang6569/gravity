@@ -16,14 +16,14 @@ import { QueueManager } from './services/QueueManager';
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 8000;
+const PORT = process.env['PORT'] || 8000;
 
 // 安全中间件
 app.use(helmet());
 
 // CORS 配置
 app.use(cors({
-  origin: process.env.NODE_ENV === 'production' 
+  origin: process.env['NODE_ENV'] === 'production' 
     ? ['http://localhost:3000'] 
     : true,
   credentials: true
@@ -55,7 +55,7 @@ app.use('/api/tasks', taskRoutes);
 app.use('/api/downloads', downloadRoutes);
 
 // 健康检查
-app.get('/health', (req, res) => {
+app.get('/health', (_req, res) => {
   res.json({ 
     status: 'ok', 
     timestamp: new Date().toISOString(),
@@ -67,11 +67,11 @@ app.get('/health', (req, res) => {
 app.use(errorHandler);
 
 // 404 处理
-app.use('*', (req, res) => {
-  res.status(404).json({ 
-    error: '接口不存在',
-    path: req.originalUrl 
-  });
+app.use('*', (_req, res) => {
+      res.status(404).json({ 
+      error: '接口不存在',
+      path: _req.originalUrl 
+    });
 });
 
 // 启动服务器

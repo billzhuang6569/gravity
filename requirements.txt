@@ -1,0 +1,12 @@
+# Python dependencies for Gravity Video Downloader
+# Generated on 2024-12-19
+
+# Core video downloader
+yt-dlp==2025.6.30
+
+# Development tools
+setuptools==80.9.0
+wheel==0.45.1
+
+# Optional: FFmpeg for video processing
+# ffmpeg-python==0.2.0 

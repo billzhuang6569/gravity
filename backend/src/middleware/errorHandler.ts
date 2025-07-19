@@ -9,7 +9,7 @@ export const errorHandler = (
   error: AppError,
   req: Request,
   res: Response,
-  next: NextFunction
+  _next: NextFunction
 ): void => {
   const statusCode = error.statusCode || 500;
   const message = error.message || '服务器内部错误';
@@ -27,7 +27,7 @@ export const errorHandler = (
     statusCode
   };
 
-  if (process.env.NODE_ENV === 'development') {
+  if (process.env['NODE_ENV'] === 'development') {
     errorResponse.stack = error.stack;
     errorResponse.path = req.path;
     errorResponse.method = req.method;

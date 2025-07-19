@@ -48,10 +48,10 @@ export class QueueManager {
 
   private async init(): Promise<void> {
     // 创建下载队列
-    this.downloadQueue = new Queue('download-queue', process.env.REDIS_URL || 'redis://localhost:6379');
+    this.downloadQueue = new Queue('download-queue', process.env['REDIS_URL'] || 'redis://localhost:6379');
 
     // 设置并发处理数量
-    const maxConcurrent = parseInt(process.env.MAX_CONCURRENT_DOWNLOADS || '3');
+    const maxConcurrent = parseInt(process.env['MAX_CONCURRENT_DOWNLOADS'] || '3');
     this.downloadQueue.process(maxConcurrent, async (job) => {
       return await this.processDownloadJob(job);
     });
