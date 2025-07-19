@@ -7,21 +7,27 @@
 
 // Configuration
 const CONFIG = {
-    API_BASE_URL: window.location.protocol + '//' + window.location.hostname + ':19282/api/v1',
+    API_BASE_URL: '',
     POLL_INTERVAL: 2000, // 2 seconds
     MAX_RETRIES: 3,
     RETRY_DELAY: 1000
 };
+
+// 检测当前访问方式并配置API URL
+console.log('Current location:', window.location.href);
+console.log('Port:', window.location.port);
 
 // 如果是通过 Nginx 代理访问（端口19280），则使用代理路径
 if (window.location.port === '19280' || window.location.port === '80' || window.location.port === '443' || window.location.port === '') {
     CONFIG.API_BASE_URL = window.location.origin + '/api/v1';
     console.log('Using proxy path for API:', CONFIG.API_BASE_URL);
 } else {
+    // 直接访问模式
+    CONFIG.API_BASE_URL = window.location.protocol + '//' + window.location.hostname + ':19282/api/v1';
     console.log('Using direct API access:', CONFIG.API_BASE_URL);
 }
 
-console.log('API Base URL configured as:', CONFIG.API_BASE_URL);
+console.log('Final API Base URL configured as:', CONFIG.API_BASE_URL);
 
 // Application state
 let currentVideoInfo = null;
@@ -34,6 +40,7 @@ let pollInterval = null;
 class GravityAPI {
     constructor(baseURL = CONFIG.API_BASE_URL) {
         this.baseURL = baseURL;
+        console.log('GravityAPI initialized with baseURL:', this.baseURL);
     }
 
     /**
