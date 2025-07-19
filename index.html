@@ -6,7 +6,7 @@
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
-    <title>Gravity Video Downloader - 最新版</title>
+    <title>Gravity Video Downloader - 现代化版本</title>
     <style>
         * {
             margin: 0;
@@ -15,8 +15,27 @@
         }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: #0a0a0a;
+            min-height: 100vh;
+            overflow-x: hidden;
+            position: relative;
+        }
+
+        /* 抽象背景容器 */
+        #bg-canvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+        }
+
+        /* 主容器 */
+        .main-container {
+            position: relative;
+            z-index: 2;
             min-height: 100vh;
             display: flex;
             align-items: center;
@@ -24,75 +43,139 @@
             padding: 20px;
         }
 
-        .container {
-            background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(10px);
-            border-radius: 20px;
+        /* 毛玻璃主窗口 */
+        .glass-container {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 24px;
             padding: 40px;
-            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
-            max-width: 600px;
+            max-width: 900px;
             width: 100%;
+            box-shadow: 0 25px 50px rgba(0, 0, 0, 0.3);
+            position: relative;
+            overflow: hidden;
+        }
+
+        /* 毛玻璃内部装饰 */
+        .glass-container::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
         }
 
         .header {
             text-align: center;
-            margin-bottom: 30px;
+            margin-bottom: 40px;
         }
 
         .header h1 {
-            color: #333;
-            font-size: 2.5rem;
-            font-weight: 700;
-            margin-bottom: 10px;
+            color: #ffffff;
+            font-size: 3rem;
+            font-weight: 800;
+            margin-bottom: 8px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
         }
 
         .header p {
-            color: #666;
+            color: rgba(255, 255, 255, 0.7);
             font-size: 1.1rem;
+            font-weight: 400;
+        }
+
+        /* 表单样式 */
+        .form-grid {
+            display: grid;
+            grid-template-columns: 2fr 1fr 1fr;
+            gap: 16px;
+            margin-bottom: 32px;
         }
 
         .form-group {
-            margin-bottom: 20px;
+            position: relative;
         }
 
         .form-group label {
             display: block;
             margin-bottom: 8px;
-            color: #333;
+            color: rgba(255, 255, 255, 0.9);
             font-weight: 600;
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
         }
 
         .form-group input,
         .form-group select {
             width: 100%;
-            padding: 12px 16px;
-            border: 2px solid #e1e5e9;
-            border-radius: 10px;
+            padding: 16px 20px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 12px;
             font-size: 16px;
-            transition: border-color 0.3s ease;
+            color: #ffffff;
+            transition: all 0.3s ease;
+            backdrop-filter: blur(10px);
+        }
+
+        .form-group input::placeholder {
+            color: rgba(255, 255, 255, 0.5);
         }
 
         .form-group input:focus,
         .form-group select:focus {
             outline: none;
             border-color: #667eea;
+            background: rgba(255, 255, 255, 0.15);
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .form-group select option {
+            background: #1a1a1a;
+            color: #ffffff;
         }
 
         .btn {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
             border: none;
-            padding: 14px 28px;
-            border-radius: 10px;
+            padding: 16px 32px;
+            border-radius: 12px;
             font-size: 16px;
             font-weight: 600;
             cursor: pointer;
-            transition: transform 0.2s ease;
+            transition: all 0.3s ease;
             width: 100%;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .btn::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+            transition: left 0.5s;
+        }
+
+        .btn:hover::before {
+            left: 100%;
         }
 
         .btn:hover {
             transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(102, 126, 234, 0.3);
         }
 
         .btn:disabled {
@@ -101,171 +184,328 @@
             transform: none;
         }
 
-        .tasks {
-            margin-top: 30px;
+        /* 任务列表 */
+        .tasks-section {
+            margin-top: 40px;
+        }
+
+        .tasks-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 24px;
+        }
+
+        .tasks-header h3 {
+            color: #ffffff;
+            font-size: 1.5rem;
+            font-weight: 700;
         }
 
         .task {
-            background: #f8f9fa;
-            border-radius: 10px;
-            padding: 20px;
-            margin-bottom: 15px;
-            border-left: 4px solid #667eea;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            padding: 24px;
+            margin-bottom: 16px;
+            transition: all 0.3s ease;
+            backdrop-filter: blur(10px);
+        }
+
+        .task:hover {
+            background: rgba(255, 255, 255, 0.08);
+            border-color: rgba(255, 255, 255, 0.2);
+            transform: translateY(-2px);
         }
 
         .task-header {
             display: flex;
             justify-content: space-between;
-            align-items: center;
-            margin-bottom: 10px;
+            align-items: flex-start;
+            margin-bottom: 16px;
+        }
+
+        .task-info {
+            flex: 1;
         }
 
         .task-title {
-            font-weight: 600;
-            color: #333;
+            font-weight: 700;
+            color: #ffffff;
+            font-size: 1.1rem;
+            margin-bottom: 8px;
+            line-height: 1.4;
         }
 
-        .task-status {
+        .task-meta {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+
+        .task-domain {
+            background: rgba(102, 126, 234, 0.2);
+            color: #667eea;
             padding: 4px 12px;
             border-radius: 20px;
-            font-size: 12px;
+            font-size: 0.8rem;
             font-weight: 600;
             text-transform: uppercase;
-        }
-
-        .status-pending {
-            background: #fff3cd;
-            color: #856404;
-        }
-
-        .status-processing {
-            background: #d1ecf1;
-            color: #0c5460;
-        }
-
-        .status-completed {
-            background: #d4edda;
-            color: #155724;
+            letter-spacing: 0.5px;
         }
 
         .task-url {
-            color: #666;
-            font-size: 14px;
-            margin-bottom: 10px;
+            color: rgba(255, 255, 255, 0.6);
+            font-size: 0.9rem;
             word-break: break-all;
+            flex: 1;
+        }
+
+        .copy-url-btn {
+            background: none;
+            border: none;
+            color: rgba(255, 255, 255, 0.6);
+            cursor: pointer;
+            padding: 8px;
+            border-radius: 8px;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .copy-url-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: #ffffff;
+        }
+
+        .task-status {
+            padding: 6px 16px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .status-pending {
+            background: rgba(255, 193, 7, 0.2);
+            color: #ffc107;
+        }
+
+        .status-processing {
+            background: rgba(13, 202, 240, 0.2);
+            color: #0dcaf0;
+        }
+
+        .status-completed {
+            background: rgba(25, 135, 84, 0.2);
+            color: #198754;
+        }
+
+        .status-failed {
+            background: rgba(220, 53, 69, 0.2);
+            color: #dc3545;
         }
 
         .progress-bar {
             width: 100%;
-            height: 8px;
-            background: #e1e5e9;
-            border-radius: 4px;
+            height: 6px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 3px;
             overflow: hidden;
-            margin-bottom: 10px;
+            margin-bottom: 16px;
         }
 
         .progress-fill {
             height: 100%;
             background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
             transition: width 0.3s ease;
+            border-radius: 3px;
         }
 
         .task-actions {
             display: flex;
-            gap: 10px;
+            gap: 12px;
         }
 
         .btn-small {
-            padding: 6px 12px;
-            font-size: 12px;
-            border-radius: 6px;
+            padding: 8px 16px;
+            font-size: 0.9rem;
+            border-radius: 8px;
+            font-weight: 500;
         }
 
         .btn-secondary {
-            background: #6c757d;
+            background: rgba(255, 255, 255, 0.1);
+            color: #ffffff;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.2);
         }
 
         .btn-danger {
-            background: #dc3545;
+            background: rgba(220, 53, 69, 0.2);
+            color: #dc3545;
+            border: 1px solid rgba(220, 53, 69, 0.3);
+        }
+
+        .btn-danger:hover {
+            background: rgba(220, 53, 69, 0.3);
         }
 
         .loading {
             text-align: center;
-            color: #666;
-            margin: 20px 0;
+            color: rgba(255, 255, 255, 0.6);
+            margin: 40px 0;
+            font-size: 1.1rem;
+        }
+
+        .message {
+            padding: 16px 20px;
+            border-radius: 12px;
+            margin-bottom: 24px;
+            font-weight: 500;
         }
 
         .error {
-            background: #f8d7da;
-            color: #721c24;
-            padding: 12px;
-            border-radius: 8px;
-            margin-bottom: 20px;
+            background: rgba(220, 53, 69, 0.1);
+            color: #dc3545;
+            border: 1px solid rgba(220, 53, 69, 0.2);
         }
 
         .success {
-            background: #d4edda;
-            color: #155724;
-            padding: 12px;
-            border-radius: 8px;
-            margin-bottom: 20px;
+            background: rgba(25, 135, 84, 0.1);
+            color: #198754;
+            border: 1px solid rgba(25, 135, 84, 0.2);
+        }
+
+        /* 响应式设计 */
+        @media (max-width: 768px) {
+            .glass-container {
+                padding: 24px;
+                margin: 10px;
+            }
+
+            .form-grid {
+                grid-template-columns: 1fr;
+                gap: 12px;
+            }
+
+            .header h1 {
+                font-size: 2.5rem;
+            }
+
+            .task-header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 12px;
+            }
+
+            .task-meta {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 8px;
+            }
+        }
+
+        /* 图标样式 */
+        .icon {
+            width: 16px;
+            height: 16px;
+            fill: currentColor;
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <div class="header">
-            <h1>🎬 Gravity</h1>
-            <p>现代化视频下载器 - 最新版</p>
-        </div>
+    <!-- 抽象背景画布 -->
+    <canvas id="bg-canvas"></canvas>
 
-        <form id="downloadForm">
-            <div class="form-group">
-                <label for="url">视频链接</label>
-                <input type="url" id="url" name="url" placeholder="粘贴视频链接..." required>
+    <div class="main-container">
+        <div class="glass-container">
+            <div class="header">
+                <h1>🎬 Gravity</h1>
+                <p>现代化视频下载器 - 抽象艺术背景版</p>
             </div>
 
-            <div class="form-group">
-                <label for="format">格式</label>
-                <select id="format" name="format">
-                    <option value="best">最佳质量</option>
-                    <option value="worst">最低质量</option>
-                    <option value="360p">360p</option>
-                    <option value="480p">480p</option>
-                    <option value="720p">720p</option>
-                    <option value="1080p">1080p</option>
-                </select>
+            <form id="downloadForm">
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="url">视频链接</label>
+                        <input type="url" id="url" name="url" placeholder="粘贴视频链接..." required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="format">格式</label>
+                        <select id="format" name="format">
+                            <option value="best">最佳质量</option>
+                            <option value="worst">最低质量</option>
+                            <option value="360p">360p</option>
+                            <option value="480p">480p</option>
+                            <option value="720p">720p</option>
+                            <option value="1080p">1080p</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="type">类型</label>
+                        <select id="type" name="type">
+                            <option value="video">视频</option>
+                            <option value="audio">音频</option>
+                        </select>
+                    </div>
+                </div>
+
+                <button type="submit" class="btn" id="submitBtn">
+                    开始下载
+                </button>
+            </form>
+
+            <div id="message"></div>
+
+            <div class="tasks-section">
+                <div class="tasks-header">
+                    <h3>下载任务</h3>
+                </div>
+                <div id="taskList"></div>
             </div>
-
-            <div class="form-group">
-                <label for="type">类型</label>
-                <select id="type" name="type">
-                    <option value="video">视频</option>
-                    <option value="audio">音频</option>
-                </select>
-            </div>
-
-            <button type="submit" class="btn" id="submitBtn">
-                开始下载
-            </button>
-        </form>
-
-        <div id="message"></div>
-
-        <div class="tasks" id="tasks">
-            <h3>下载任务</h3>
-            <div id="taskList"></div>
         </div>
     </div>
+
+    <!-- 复制图标 SVG -->
+    <svg style="display: none;">
+        <symbol id="copy-icon" viewBox="0 0 24 24">
+            <path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/>
+        </symbol>
+    </svg>
+
+    <!-- 抽象背景库 -->
+    <script src="AbstractShapeBg.min.js"></script>
 
     <script>
         const API_BASE = 'http://localhost:8088/api';
         let tasks = [];
 
+        // 初始化抽象背景
+        function initAbstractBackground() {
+            const canvas = document.getElementById('bg-canvas');
+            const bg = new AbstractShapeBg(canvas, {
+                color: '#667eea',
+                backgroundColor: '#0a0a0a',
+                speed: 0.5,
+                density: 0.8,
+                size: 2
+            });
+            bg.start();
+        }
+
         // 显示消息
         function showMessage(message, type = 'success') {
             const messageDiv = document.getElementById('message');
-            messageDiv.innerHTML = `<div class="${type}">${message}</div>`;
+            messageDiv.innerHTML = `<div class="message ${type}">${message}</div>`;
             setTimeout(() => {
                 messageDiv.innerHTML = '';
             }, 5000);
@@ -282,6 +522,27 @@
             return statusMap[status] || status;
         }
 
+        // 获取域名
+        function getDomain(url) {
+            try {
+                const urlObj = new URL(url);
+                return urlObj.hostname.replace('www.', '');
+            } catch {
+                return 'unknown';
+            }
+        }
+
+        // 复制URL到剪贴板
+        async function copyUrl(url) {
+            try {
+                await navigator.clipboard.writeText(url);
+                showMessage('链接已复制到剪贴板！');
+            } catch (error) {
+                console.error('复制失败:', error);
+                showMessage('复制失败', 'error');
+            }
+        }
+
         // 渲染任务列表
         function renderTasks() {
             const taskList = document.getElementById('taskList');
@@ -293,16 +554,26 @@
             taskList.innerHTML = tasks.map(task => `
                 <div class="task">
                     <div class="task-header">
-                        <div class="task-title">${task.title}</div>
+                        <div class="task-info">
+                            <div class="task-title">${task.title}</div>
+                            <div class="task-meta">
+                                <span class="task-domain">${getDomain(task.url)}</span>
+                                <span class="task-url">${task.url}</span>
+                                <button class="copy-url-btn" onclick="copyUrl('${task.url}')" title="复制链接">
+                                    <svg class="icon">
+                                        <use href="#copy-icon"></use>
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
                         <div class="task-status status-${task.status}">${formatStatus(task.status)}</div>
                     </div>
-                    <div class="task-url">${task.url}</div>
                     <div class="progress-bar">
                         <div class="progress-fill" style="width: ${task.progress}%"></div>
                     </div>
                     <div class="task-actions">
                         ${task.status === 'completed' ? 
-                            `<button class="btn btn-small" onclick="downloadFile('${task.id}')">下载文件</button>` : 
+                            `<button class="btn btn-small btn-secondary" onclick="downloadFile('${task.id}')">下载文件</button>` : 
                             ''
                         }
                         <button class="btn btn-small btn-danger" onclick="deleteTask('${task.id}')">删除</button>
@@ -482,8 +753,12 @@
         // 定期更新任务状态
         setInterval(updateTaskStatus, 2000);
 
-        // 页面加载时获取现有任务
+        // 页面加载时初始化
         window.addEventListener('load', async () => {
+            // 初始化抽象背景
+            initAbstractBackground();
+            
+            // 获取现有任务
             try {
                 const response = await fetch(`${API_BASE}/tasks`);
                 const result = await response.json();
