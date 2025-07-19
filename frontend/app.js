@@ -360,7 +360,10 @@ class DownloadComponent {
             baseUrl: baseUrl,
             finalUrl: downloadUrl,
             filename: downloadFilename,
-            configApiBase: CONFIG.API_BASE_URL
+            configApiBase: CONFIG.API_BASE_URL,
+            urlParts: download.download_url ? download.download_url.split('/') : [],
+            lastPart: download.download_url ? download.download_url.split('/').pop() : '',
+            decoded: download.download_url ? decodeURIComponent(download.download_url.split('/').pop()) : ''
         });
         
         return `

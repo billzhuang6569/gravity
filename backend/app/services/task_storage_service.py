@@ -135,15 +135,20 @@ class TaskStorage:
                         cached_task.status = TaskStatus.DOWNLOADING
                         # Handle different progress states with user-friendly messages
                         if result.state == 'STARTED':
+                            logger.info(f"Setting STARTED task {task_id} progress to '下载中...'")
                             cached_task.progress = "下载中..."
                         elif result.state == 'PROGRESS':
                             # If it's progress info, try to extract meaningful data
                             if isinstance(result.info, dict):
-                                cached_task.progress = result.info.get('progress', '下载中...')
+                                progress_msg = result.info.get('progress', '下载中...')
+                                logger.info(f"Setting PROGRESS task {task_id} progress to '{progress_msg}'")
+                                cached_task.progress = progress_msg
                             else:
+                                logger.info(f"Setting PROGRESS task {task_id} progress to '下载中...' (non-dict info)")
                                 cached_task.progress = "下载中..."
                         else:
                             # For any other state, show generic downloading message
+                            logger.info(f"Setting {result.state} task {task_id} progress to '下载中...'")
                             cached_task.progress = "下载中..."
                     
                     cached_task.updated_at = datetime.now()

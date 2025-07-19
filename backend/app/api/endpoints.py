@@ -376,12 +376,13 @@ async def download_file(filename: str):
         # Get file extension
         file_name, file_ext = os.path.splitext(decoded_filename)
         
-        # Create safe base name (ASCII only) but keep extension
-        safe_base_name = re.sub(r'[^\x00-\x7F]', '_', file_name)
-        safe_base_name = safe_base_name.replace('"', '')
-        
-        # Combine safe base name with original extension
-        safe_filename = safe_base_name + file_ext
+        # For the safe filename, use a simple name with extension
+        # This ensures the extension is preserved even if the base name is replaced
+        if file_ext:
+            safe_filename = f"download{file_ext}"
+        else:
+            # Try to guess extension from content type or default to .bin
+            safe_filename = "download.bin"
         
         # File streaming generator
         def iterfile():
@@ -395,15 +396,27 @@ async def download_file(filename: str):
         # Return streaming response with proper headers
         # Use both filename and filename* for better browser compatibility
         from urllib.parse import quote
-        encoded_filename = quote(decoded_filename.encode('utf-8'))
+        
+        # Encode the full filename for UTF-8 support
+        encoded_filename = quote(decoded_filename)
+        
+        # Set appropriate media type based on file extension
+        media_type = 'application/octet-stream'
+        if file_ext.lower() == '.mp3':
+            media_type = 'audio/mpeg'
+        elif file_ext.lower() == '.mp4':
+            media_type = 'video/mp4'
+        elif file_ext.lower() == '.m4a':
+            media_type = 'audio/mp4'
         
         return StreamingResponse(
             iterfile(),
-            media_type='application/octet-stream',
+            media_type=media_type,
             headers={
                 "Content-Disposition": f'attachment; filename="{safe_filename}"; filename*=UTF-8\'\'{encoded_filename}',
                 "Content-Length": str(file_size),
-                "Cache-Control": "no-cache"
+                "Cache-Control": "no-cache",
+                "Accept-Ranges": "bytes"
             }
         )
         
