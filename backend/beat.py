@@ -141,7 +141,6 @@ def main():
             f'--logfile={log_file}',
             '--max-interval=300',  # Maximum sleep interval between checks (5 minutes)
             '--scheduler=celery.beat.PersistentScheduler',  # Use persistent scheduler
-            '--working-directory=' + os.getcwd(),  # Set working directory
         ]
         
         # Log the command being executed
