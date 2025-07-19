@@ -102,16 +102,20 @@ class TaskStorage:
                     from app.celery_app import celery_app
                     result = celery_app.AsyncResult(task_id)
                     
+                    logger.info(f"Celery task {task_id} state: {result.state}, info: {result.info}")
+                    
                     # Update task status based on Celery result
                     if result.state == 'PENDING':
                         cached_task.status = TaskStatus.PENDING
                         cached_task.progress = "排队中..."
                     elif result.state == 'SUCCESS':
                         task_data = result.result or {}
+                        logger.info(f"Task {task_id} completed successfully with data: {task_data}")
                         cached_task.status = TaskStatus.COMPLETED
                         cached_task.progress = "已完成"
                         cached_task.title = task_data.get('title', cached_task.title)
                         cached_task.download_url = task_data.get('download_url', '')
+                        cached_task.file_path = task_data.get('file_path', '')
                     elif result.state == 'FAILURE':
                         cached_task.status = TaskStatus.FAILED
                         cached_task.progress = "失败"
