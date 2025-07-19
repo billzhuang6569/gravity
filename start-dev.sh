@@ -41,8 +41,8 @@ echo "⏳ 等待后端服务启动..."
 sleep 5
 
 # 检查后端是否启动成功
-if curl -s http://localhost:8000/health > /dev/null; then
-    echo "✅ 后端服务启动成功 (http://localhost:8000)"
+if curl -s http://localhost:8088/health > /dev/null; then
+    echo "✅ 后端服务启动成功 (http://localhost:8088)"
 else
     echo "❌ 后端服务启动失败"
     exit 1
@@ -50,18 +50,18 @@ fi
 
 # 启动前端服务
 echo "🎨 启动前端服务..."
-cd frontend
-npm start &
+cd ..
+python3 -m http.server 8089 &
 FRONTEND_PID=$!
 cd ..
 
 # 等待前端启动
 echo "⏳ 等待前端服务启动..."
-sleep 10
+sleep 5
 
 # 检查前端是否启动成功
-if curl -s http://localhost:3000 > /dev/null; then
-    echo "✅ 前端服务启动成功 (http://localhost:3000)"
+if curl -s http://localhost:8089/ > /dev/null; then
+    echo "✅ 前端服务启动成功 (http://localhost:8089)"
 else
     echo "❌ 前端服务启动失败"
     exit 1
@@ -70,9 +70,9 @@ fi
 echo ""
 echo "🎉 Gravity Video Downloader 启动完成！"
 echo ""
-echo "📱 前端界面: http://localhost:3000"
-echo "🔧 后端API: http://localhost:8000"
-echo "📊 健康检查: http://localhost:8000/health"
+echo "📱 前端界面: http://localhost:8089"
+echo "🔧 后端API: http://localhost:8088"
+echo "📊 健康检查: http://localhost:8088/health"
 echo ""
 echo "按 Ctrl+C 停止所有服务"
 
