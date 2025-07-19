@@ -97,14 +97,18 @@ class TaskStorage:
                 cached_task = self._task_cache[task_id]
                 logger.info(f"Found task {task_id} in memory cache")
                 
+                # Check if cached task has celery_task_id
+                celery_task_id = getattr(cached_task, 'celery_task_id', '')
+                logger.info(f"Cached task celery_task_id: '{celery_task_id}'")
+                
                 # Try to get updated status from Celery
                 try:
                     from app.celery_app import celery_app
                     
                     # Use Celery task ID if available, otherwise use business task ID
-                    celery_task_id = getattr(cached_task, 'celery_task_id', task_id)
-                    logger.info(f"Querying Celery for task {task_id} (Celery ID: {celery_task_id})...")
-                    result = celery_app.AsyncResult(celery_task_id)
+                    query_id = celery_task_id if celery_task_id else task_id
+                    logger.info(f"Querying Celery for task {task_id} (Query ID: {query_id})...")
+                    result = celery_app.AsyncResult(query_id)
                     
                     logger.info(f"Celery task {task_id} state: {result.state}, info: {result.info}")
                     

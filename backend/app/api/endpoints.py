@@ -138,10 +138,11 @@ async def submit_download(request: DownloadRequest) -> TaskResponse:
         celery_result = download_video_task.delay(task_id, request.url, request.model_dump())
         logger.info(f"Celery task {task_id} submitted with result ID: {celery_result.id}")
         
-        # Store Celery task ID in the task object
+        # Store Celery task ID in the task object and cache
         task.celery_task_id = celery_result.id
         if hasattr(task_storage, '_task_cache') and task_id in task_storage._task_cache:
             task_storage._task_cache[task_id].celery_task_id = celery_result.id
+            logger.info(f"Stored Celery task ID {celery_result.id} for business task {task_id}")
         
         logger.info(f"Download task {task_id} submitted successfully")
         
