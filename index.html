@@ -56,6 +56,7 @@
             box-shadow: 0 25px 50px rgba(0, 0, 0, 0.3);
             position: relative;
             overflow: hidden;
+            transition: all 0.3s ease;
         }
 
         /* 毛玻璃内部装饰 */
@@ -67,6 +68,42 @@
             right: 0;
             height: 1px;
             background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+        }
+
+        /* 初始状态 - 空白毛玻璃 */
+        .initial-state {
+            text-align: center;
+            padding: 80px 40px;
+        }
+
+        .initial-state .paste-hint {
+            font-size: 4rem;
+            color: rgba(255, 255, 255, 0.3);
+            margin-bottom: 20px;
+            font-weight: 300;
+            letter-spacing: 2px;
+        }
+
+        .initial-state .paste-text {
+            color: rgba(255, 255, 255, 0.6);
+            font-size: 1.2rem;
+            font-weight: 400;
+            margin-bottom: 40px;
+        }
+
+        .initial-state .paste-subtitle {
+            color: rgba(255, 255, 255, 0.4);
+            font-size: 0.9rem;
+            font-weight: 300;
+        }
+
+        /* 表单状态 - 隐藏初始状态 */
+        .form-state {
+            display: none;
+        }
+
+        .form-state.active {
+            display: block;
         }
 
         .header {
@@ -410,6 +447,10 @@
                 align-items: flex-start;
                 gap: 8px;
             }
+
+            .initial-state .paste-hint {
+                font-size: 3rem;
+            }
         }
 
         /* 图标样式 */
@@ -417,6 +458,16 @@
             width: 16px;
             height: 16px;
             fill: currentColor;
+        }
+
+        /* 粘贴提示动画 */
+        @keyframes pulse {
+            0%, 100% { opacity: 0.3; }
+            50% { opacity: 0.6; }
+        }
+
+        .paste-hint {
+            animation: pulse 2s ease-in-out infinite;
         }
     </style>
 </head>
@@ -426,51 +477,61 @@
 
     <div class="main-container">
         <div class="glass-container">
-            <div class="header">
-                <h1>🎬 Gravity</h1>
-                <p>现代化视频下载器 - 抽象艺术背景版</p>
+            <!-- 初始状态 -->
+            <div class="initial-state" id="initialState">
+                <div class="paste-hint">⌘V</div>
+                <div class="paste-text">粘贴视频链接开始下载</div>
+                <div class="paste-subtitle">支持 Bilibili、YouTube 等主流平台</div>
             </div>
 
-            <form id="downloadForm">
-                <div class="form-grid">
-                    <div class="form-group">
-                        <label for="url">视频链接</label>
-                        <input type="url" id="url" name="url" placeholder="粘贴视频链接..." required>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="format">格式</label>
-                        <select id="format" name="format">
-                            <option value="best">最佳质量</option>
-                            <option value="worst">最低质量</option>
-                            <option value="360p">360p</option>
-                            <option value="480p">480p</option>
-                            <option value="720p">720p</option>
-                            <option value="1080p">1080p</option>
-                        </select>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="type">类型</label>
-                        <select id="type" name="type">
-                            <option value="video">视频</option>
-                            <option value="audio">音频</option>
-                        </select>
-                    </div>
+            <!-- 表单状态 -->
+            <div class="form-state" id="formState">
+                <div class="header">
+                    <h1>🎬 Gravity</h1>
+                    <p>现代化视频下载器 - 抽象艺术背景版</p>
                 </div>
 
-                <button type="submit" class="btn" id="submitBtn">
-                    开始下载
-                </button>
-            </form>
+                <form id="downloadForm">
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="url">视频链接</label>
+                            <input type="url" id="url" name="url" placeholder="粘贴视频链接..." required>
+                        </div>
 
-            <div id="message"></div>
+                        <div class="form-group">
+                            <label for="format">格式</label>
+                            <select id="format" name="format">
+                                <option value="best">最佳质量</option>
+                                <option value="worst">最低质量</option>
+                                <option value="360p">360p</option>
+                                <option value="480p">480p</option>
+                                <option value="720p">720p</option>
+                                <option value="1080p">1080p</option>
+                            </select>
+                        </div>
 
-            <div class="tasks-section">
-                <div class="tasks-header">
-                    <h3>下载任务</h3>
+                        <div class="form-group">
+                            <label for="type">类型</label>
+                            <select id="type" name="type">
+                                <option value="video">视频</option>
+                                <option value="audio">音频</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <button type="submit" class="btn" id="submitBtn">
+                        开始下载
+                    </button>
+                </form>
+
+                <div id="message"></div>
+
+                <div class="tasks-section">
+                    <div class="tasks-header">
+                        <h3>下载任务</h3>
+                    </div>
+                    <div id="taskList"></div>
                 </div>
-                <div id="taskList"></div>
             </div>
         </div>
     </div>
@@ -488,18 +549,32 @@
     <script>
         const API_BASE = 'http://localhost:8088/api';
         let tasks = [];
+        let abstractBg = null;
 
         // 初始化抽象背景
         function initAbstractBackground() {
-            const canvas = document.getElementById('bg-canvas');
-            const bg = new AbstractShapeBg(canvas, {
-                color: '#667eea',
-                backgroundColor: '#0a0a0a',
-                speed: 0.5,
-                density: 0.8,
-                size: 2
-            });
-            bg.start();
+            try {
+                const canvas = document.getElementById('bg-canvas');
+                if (typeof Color4Bg !== 'undefined' && Color4Bg.AbstractShapeBg) {
+                    abstractBg = new Color4Bg.AbstractShapeBg(canvas, {
+                        color: '#667eea',
+                        backgroundColor: '#0a0a0a',
+                        speed: 0.5,
+                        density: 0.8,
+                        size: 2
+                    });
+                    abstractBg.start();
+                } else {
+                    console.log('AbstractShapeBg not found, using fallback background');
+                    // 备用背景
+                    canvas.style.background = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
+                }
+            } catch (error) {
+                console.error('Failed to initialize abstract background:', error);
+                // 备用背景
+                const canvas = document.getElementById('bg-canvas');
+                canvas.style.background = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
+            }
         }
 
         // 显示消息
@@ -540,6 +615,31 @@
             } catch (error) {
                 console.error('复制失败:', error);
                 showMessage('复制失败', 'error');
+            }
+        }
+
+        // 切换到表单状态
+        function switchToFormState() {
+            document.getElementById('initialState').style.display = 'none';
+            document.getElementById('formState').classList.add('active');
+        }
+
+        // 检测粘贴事件
+        function handlePaste(event) {
+            const pastedText = (event.clipboardData || window.clipboardData).getData('text');
+            
+            // 检查是否是有效的URL
+            if (pastedText && (pastedText.includes('bilibili.com') || pastedText.includes('youtube.com') || pastedText.includes('http'))) {
+                // 切换到表单状态
+                switchToFormState();
+                
+                // 设置URL到输入框
+                setTimeout(() => {
+                    document.getElementById('url').value = pastedText;
+                    document.getElementById('url').focus();
+                }, 100);
+                
+                showMessage('检测到视频链接，请选择下载参数');
             }
         }
 
@@ -758,13 +858,17 @@
             // 初始化抽象背景
             initAbstractBackground();
             
+            // 添加粘贴事件监听
+            document.addEventListener('paste', handlePaste);
+            
             // 获取现有任务
             try {
                 const response = await fetch(`${API_BASE}/tasks`);
                 const result = await response.json();
                 
-                if (response.ok) {
+                if (response.ok && result.tasks && result.tasks.length > 0) {
                     tasks = result.tasks || [];
+                    switchToFormState();
                     renderTasks();
                 }
             } catch (error) {
