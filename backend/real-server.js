@@ -84,15 +84,23 @@ function downloadVideo(taskId, url, format, type) {
       args.push('--audio-format', 'mp3');
       args.push('--audio-quality', '0');
     } else {
-      // 视频格式
+      // 视频格式 - 针对B站优化
       if (format === 'best') {
         args.push('--format', 'best');
       } else if (format === 'worst') {
         args.push('--format', 'worst');
       } else if (format === '720p') {
-        args.push('--format', 'best[height<=720]');
+        // B站720p格式ID
+        args.push('--format', '30064');
       } else if (format === '1080p') {
-        args.push('--format', 'best[height<=1080]');
+        // B站1080p格式ID
+        args.push('--format', '30080');
+      } else if (format === '480p') {
+        // B站480p格式ID
+        args.push('--format', '30032');
+      } else if (format === '360p') {
+        // B站360p格式ID
+        args.push('--format', '30016');
       } else {
         args.push('--format', 'best');
       }
