@@ -7,14 +7,14 @@
 
 // Configuration
 const CONFIG = {
-    API_BASE_URL: window.location.protocol + '//' + window.location.hostname + ':8001/api/v1',
+    API_BASE_URL: window.location.protocol + '//' + window.location.hostname + ':19282/api/v1',
     POLL_INTERVAL: 2000, // 2 seconds
     MAX_RETRIES: 3,
     RETRY_DELAY: 1000
 };
 
-// 如果是通过 Nginx 代理，则使用相同域名
-if (window.location.port === '80' || window.location.port === '443' || window.location.port === '') {
+// 如果是通过 Nginx 代理访问（端口19280），则使用代理路径
+if (window.location.port === '19280' || window.location.port === '80' || window.location.port === '443' || window.location.port === '') {
     CONFIG.API_BASE_URL = window.location.origin + '/api/v1';
 }
 
