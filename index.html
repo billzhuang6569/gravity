@@ -695,6 +695,43 @@
             `).join('');
         }
 
+        // 渲染初始状态的任务（如果有的话）
+        function renderInitialTasks() {
+            if (tasks.length > 0) {
+                // 在初始状态下显示任务，但保持毛玻璃的纯粹性
+                const initialState = document.getElementById('initialState');
+                const existingContent = initialState.innerHTML;
+                
+                // 在初始状态下方添加任务列表
+                initialState.innerHTML = existingContent + `
+                    <div class="initial-tasks" style="margin-top: 60px; text-align: left;">
+                        <h3 style="color: rgba(255, 255, 255, 0.7); font-size: 1.2rem; margin-bottom: 20px; text-align: center;">现有任务</h3>
+                        ${tasks.map(task => `
+                            <div class="task" style="background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 16px; padding: 20px; margin-bottom: 16px; backdrop-filter: blur(20px);">
+                                <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px;">
+                                    <div style="flex: 1;">
+                                        <div style="font-weight: 600; color: rgba(255, 255, 255, 0.9); font-size: 1rem; margin-bottom: 8px;">${task.title}</div>
+                                        <div style="color: rgba(255, 255, 255, 0.5); font-size: 0.85rem; word-break: break-all;">${task.url}</div>
+                                    </div>
+                                    <div style="padding: 4px 12px; border-radius: 12px; font-size: 0.75rem; font-weight: 600; background: rgba(102, 126, 234, 0.2); color: #667eea;">${formatStatus(task.status)}</div>
+                                </div>
+                                <div style="width: 100%; height: 4px; background: rgba(255, 255, 255, 0.1); border-radius: 2px; overflow: hidden; margin-bottom: 12px;">
+                                    <div style="height: 100%; background: linear-gradient(90deg, #667eea 0%, #764ba2 100%); width: ${task.progress}%; border-radius: 2px;"></div>
+                                </div>
+                                <div style="display: flex; gap: 8px;">
+                                    ${task.status === 'completed' ? 
+                                        `<button onclick="downloadFile('${task.id}')" style="background: rgba(255, 255, 255, 0.1); color: #ffffff; border: 1px solid rgba(255, 255, 255, 0.2); padding: 6px 12px; border-radius: 8px; font-size: 0.8rem; cursor: pointer;">下载</button>` : 
+                                        ''
+                                    }
+                                    <button onclick="deleteTask('${task.id}')" style="background: rgba(220, 53, 69, 0.2); color: #dc3545; border: 1px solid rgba(220, 53, 69, 0.3); padding: 6px 12px; border-radius: 8px; font-size: 0.8rem; cursor: pointer;">删除</button>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+            }
+        }
+
         // 创建下载任务
         async function createTask(formData) {
             try {
@@ -835,7 +872,18 @@
                     }
                 }
             }
-            renderTasks();
+            
+            // 检查当前是否在初始状态
+            const initialState = document.getElementById('initialState');
+            const formState = document.getElementById('formState');
+            
+            if (initialState.style.display !== 'none') {
+                // 在初始状态下，重新渲染初始任务
+                renderInitialTasks();
+            } else {
+                // 在表单状态下，正常渲染任务列表
+                renderTasks();
+            }
         }
 
         // 表单提交处理
@@ -871,15 +919,16 @@
             // 添加粘贴事件监听
             document.addEventListener('paste', handlePaste);
             
-            // 获取现有任务
+            // 获取现有任务但不自动切换状态
             try {
                 const response = await fetch(`${API_BASE}/tasks`);
                 const result = await response.json();
                 
                 if (response.ok && result.tasks && result.tasks.length > 0) {
                     tasks = result.tasks || [];
-                    switchToFormState();
+                    // 不自动切换到表单状态，保持初始状态
                     renderTasks();
+                    renderInitialTasks(); // 渲染初始状态的任务
                 }
             } catch (error) {
                 console.error('获取任务列表失败:', error);
