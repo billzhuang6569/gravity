@@ -10,31 +10,25 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
-# Create non-root user
-RUN groupadd -r gravity && useradd -r -g gravity gravity
-
-# Copy requirements and install Python dependencies
+# Copy requirements first for better caching
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt \
-    && pip install --no-cache-dir gunicorn
+
+# Install Python dependencies
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY . .
 
-# Create directories for downloads and temp files
-RUN mkdir -p /opt/gravity/downloads /opt/gravity/temp /opt/gravity/logs \
-    && chown -R gravity:gravity /opt/gravity \
-    && chown -R gravity:gravity /app
-
-# Switch to non-root user
-USER gravity
+# Create required directories
+RUN mkdir -p /opt/gravity/downloads /opt/gravity/temp /opt/gravity/logs
 
 # Expose port
 EXPOSE 8000
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
     CMD curl -f http://localhost:8000/api/v1/health || exit 1
 
-# Default command (使用 Gunicorn 提供更好的生产性能)
-CMD ["gunicorn", "app.main:app", "-w", "4", "-k", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8000", "--access-logfile", "-", "--error-logfile", "-"]
+# Default command - use uvicorn directly for simplicity
+CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
