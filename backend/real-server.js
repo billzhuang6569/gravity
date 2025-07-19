@@ -305,14 +305,18 @@ app.delete('/api/tasks/:id', (req, res) => {
 app.get('/api/downloads/:taskId', (req, res) => {
   try {
     const { taskId } = req.params;
+    console.log('Download request for taskId:', taskId);
+    
     const task = tasks.find(t => t.id === taskId);
     
     if (!task) {
+      console.log('Task not found:', taskId);
       return res.status(404).json({
         error: 'Task not found'
       });
     }
 
+    console.log('Task status:', task.status);
     if (task.status !== 'completed') {
       return res.status(400).json({
         error: 'Task not completed',
@@ -321,7 +325,17 @@ app.get('/api/downloads/:taskId', (req, res) => {
     }
 
     const taskDir = path.join(DOWNLOAD_DIR, taskId);
+    console.log('Task directory:', taskDir);
+    
+    if (!fs.existsSync(taskDir)) {
+      console.log('Task directory does not exist:', taskDir);
+      return res.status(404).json({
+        error: 'Task directory not found'
+      });
+    }
+    
     const files = fs.readdirSync(taskDir);
+    console.log('Files in directory:', files);
     
     if (files.length === 0) {
       return res.status(404).json({
@@ -331,17 +345,39 @@ app.get('/api/downloads/:taskId', (req, res) => {
 
     const fileName = files[0];
     const filePath = path.join(taskDir, fileName);
+    console.log('File path:', filePath);
+    
+    if (!fs.existsSync(filePath)) {
+      console.log('File does not exist:', filePath);
+      return res.status(404).json({
+        error: 'File not found on disk'
+      });
+    }
+    
     const stats = fs.statSync(filePath);
+    console.log('File stats:', stats);
 
     // 设置响应头
     res.setHeader('Content-Type', 'application/octet-stream');
-    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`);
     res.setHeader('Content-Length', stats.size);
+    
+    console.log('Sending file:', fileName, 'Size:', stats.size);
     
     // 发送文件
     const fileStream = fs.createReadStream(filePath);
+    fileStream.on('error', (error) => {
+      console.error('File stream error:', error);
+      if (!res.headersSent) {
+        res.status(500).json({
+          error: 'File stream error',
+          details: error.message
+        });
+      }
+    });
     fileStream.pipe(res);
   } catch (error) {
+    console.error('Download error:', error);
     res.status(500).json({
       error: 'Failed to download file',
       details: error.message
