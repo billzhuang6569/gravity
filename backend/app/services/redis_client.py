@@ -24,14 +24,26 @@ class RedisClient:
     async def connect(self) -> None:
         """Initialize Redis connection pool."""
         try:
-            # Create connection pool with appropriate settings
+            # Close existing connections if any
+            if self._client:
+                try:
+                    await self._client.aclose()
+                except:
+                    pass
+            if self._pool:
+                try:
+                    await self._pool.aclose()
+                except:
+                    pass
+            
+            # Create connection pool with more conservative settings
             self._pool = ConnectionPool.from_url(
                 settings.redis_url,
-                max_connections=20,
+                max_connections=10,
                 retry_on_timeout=True,
-                socket_connect_timeout=5,
-                socket_timeout=5,
-                health_check_interval=30
+                socket_connect_timeout=10,
+                socket_timeout=10,
+                health_check_interval=60
             )
             
             # Create Redis client
@@ -40,11 +52,19 @@ class RedisClient:
                 decode_responses=True
             )
             
-            # Test connection
-            if not await self.health_check():
-                raise ConnectionError("Failed to establish Redis connection")
-            self._is_connected = True
-            logger.info("Redis connection established successfully")
+            # Test connection with retry
+            max_retries = 5
+            for attempt in range(max_retries):
+                try:
+                    await asyncio.wait_for(self._client.ping(), timeout=8.0)
+                    self._is_connected = True
+                    logger.info("Redis connection established successfully")
+                    return
+                except Exception as e:
+                    if attempt == max_retries - 1:
+                        raise ConnectionError(f"Failed to establish Redis connection after {max_retries} attempts: {e}")
+                    logger.warning(f"Redis connection attempt {attempt + 1} failed: {e}")
+                    await asyncio.sleep(2)
             
         except Exception as e:
             logger.error(f"Failed to connect to Redis: {e}")
@@ -69,13 +89,17 @@ class RedisClient:
             if not self._client:
                 return False
             
-            # Simple ping test
-            response = await self._client.ping()
-            if response:
-                logger.debug("Redis health check passed")
-                return True
-            else:
-                logger.warning("Redis ping returned False")
+            # Use a simple sync-style check to avoid event loop conflicts
+            try:
+                # Create a new event loop context for health check
+                response = await asyncio.wait_for(self._client.ping(), timeout=2.0)
+                if response:
+                    return True
+                else:
+                    logger.warning("Redis ping returned False")
+                    return False
+            except (asyncio.TimeoutError, ConnectionError, OSError) as e:
+                logger.warning(f"Redis health check failed: {e}")
                 return False
                 
         except Exception as e:

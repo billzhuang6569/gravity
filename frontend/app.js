@@ -18,6 +18,8 @@ if (window.location.port === '19280' || window.location.port === '80' || window.
     CONFIG.API_BASE_URL = window.location.origin + '/api/v1';
 }
 
+console.log('API Base URL configured as:', CONFIG.API_BASE_URL);
+
 // Application state
 let currentVideoInfo = null;
 let activeDownloads = new Map();
@@ -325,13 +327,14 @@ class DownloadComponent {
         const statusClass = `status-${download.status.toLowerCase()}`;
         const statusText = this.getStatusText(download.status);
         
-        // Create the download URL - download_url already includes /api/v1/downloads path
+        // Create the download URL - use the same base as API but without /api/v1
+        const baseUrl = CONFIG.API_BASE_URL.replace('/api/v1', '');
         const downloadUrl = download.download_url ? 
-            `http://localhost:8001${download.download_url}` : '';
+            `${baseUrl}${download.download_url}` : '';
         
         console.log('Debug download URL construction:', {
             original: download.download_url,
-            baseUrl: CONFIG.API_BASE_URL.replace('/api/v1', ''),
+            baseUrl: baseUrl,
             finalUrl: downloadUrl,
             configApiBase: CONFIG.API_BASE_URL
         });
@@ -501,7 +504,7 @@ class HistoryComponent {
                 </div>
                 <div class="download-actions">
                     ${task.status === 'COMPLETED' && task.download_url ? 
-                        `<button class="btn btn-success" onclick="forceDownload('http://localhost:8001${task.download_url}', '${escapeHtml(task.title || '未知标题')}')">下载</button>` : 
+                        `<button class="btn btn-success" onclick="forceDownload('${window.location.origin.replace(':19280', ':19282')}${task.download_url}', '${escapeHtml(task.title || '未知标题')}')">下载</button>` : 
                         ''}
                     <button class="btn btn-primary" onclick="redownload('${escapeHtml(task.url)}')">重新下载</button>
                 </div>

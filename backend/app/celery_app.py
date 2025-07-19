@@ -141,7 +141,11 @@ def worker_init_handler(sender=None, conf=None, **kwargs):
     """Handle worker initialization."""
     import logging
     logger = logging.getLogger(__name__)
-    logger.info(f"Worker {sender} initialized with concurrency: {conf.worker_concurrency}")
+    try:
+        concurrency = getattr(conf, 'worker_concurrency', 'auto') if conf else 'auto'
+        logger.info(f"Worker {sender} initialized with concurrency: {concurrency}")
+    except Exception as e:
+        logger.warning(f"Could not get worker concurrency info: {e}")
 
 
 @signals.worker_ready.connect
