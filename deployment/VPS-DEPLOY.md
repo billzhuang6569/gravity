@@ -7,7 +7,7 @@
 - **CPU**: 2核以上
 - **内存**: 2GB+ (推荐 4GB)
 - **磁盘**: 20GB+
-- **端口**: 8080, 18001, 16379 (可自定义)
+- **端口**: 19280, 19282, 19283 (不常见端口，避免冲突)
 
 ### 2. 安装 Docker 和 Docker Compose
 
@@ -65,9 +65,9 @@ cd gravity/deployment
 🎉 部署成功！
 
 访问地址:
-🌐 前端界面: http://YOUR-SERVER-IP:8080
-📚 API 文档: http://YOUR-SERVER-IP:18001/docs
-🔍 健康检查: http://YOUR-SERVER-IP:8080/health
+🌐 前端界面: http://YOUR-SERVER-IP:19280
+📚 API 文档: http://YOUR-SERVER-IP:19282/docs
+🔍 健康检查: http://YOUR-SERVER-IP:19280/health
 ```
 
 ## 🛠️ 管理命令
@@ -76,47 +76,47 @@ cd gravity/deployment
 
 ```bash
 # 查看服务状态
-./manage-production.sh status
+./manage.sh status
 
 # 查看实时日志
-./manage-production.sh logs
+./manage.sh logs
 
 # 查看特定服务日志
-./manage-production.sh logs api
+./manage.sh logs api
 
 # 重启服务
-./manage-production.sh restart
+./manage.sh restart
 
 # 停止服务
-./manage-production.sh stop
+./manage.sh stop
 
 # 启动服务
-./manage-production.sh start
+./manage.sh start
 ```
 
 ### 健康检查
 
 ```bash
 # 执行健康检查
-./manage-production.sh health
+./manage.sh health
 ```
 
 输出示例：
 ```
 🔍 健康检查:
-  ✅ Redis (16379): 健康
-  ✅ API (18001): 健康  
-  ✅ 前端 (8080): 健康
+  ✅ Redis (19283): 健康
+  ✅ API (19282): 健康  
+  ✅ 前端 (19280): 健康
 ```
 
 ### 调试命令
 
 ```bash
 # 进入 API 容器
-./manage-production.sh shell
+./manage.sh shell
 
 # 进入 Redis 命令行
-./manage-production.sh redis-cli
+./manage.sh redis-cli
 ```
 
 ## 🔧 配置说明
@@ -125,9 +125,9 @@ cd gravity/deployment
 
 | 服务 | 内部端口 | 外部端口 | 说明 |
 |------|----------|----------|------|
-| 前端 | 80 | 8080 | Web 界面 |
-| API | 8000 | 18001 | REST API |
-| Redis | 6379 | 16379 | 数据库 |
+| 前端 | 80 | 19280 | Web 界面 |
+| API | 8000 | 19282 | REST API |
+| Redis | 6379 | 19283 | 数据库 |
 
 ### 环境变量
 
@@ -164,8 +164,8 @@ SECRET_KEY=GravityVideoDownloader2024SecureKey123456789
 
 ```bash
 # 开放必要端口
-sudo ufw allow 8080/tcp   # HTTP 前端
-sudo ufw allow 18001/tcp  # API 服务
+sudo ufw allow 19280/tcp  # HTTP 前端
+sudo ufw allow 19282/tcp  # API 服务
 sudo ufw allow 22/tcp     # SSH 连接
 sudo ufw enable
 
@@ -180,7 +180,7 @@ sudo ufw status
 #### 1. 端口被占用
 ```bash
 # 检查端口占用
-netstat -tlnp | grep -E "(8080|18001|16379)"
+netstat -tlnp | grep -E "(19280|19282|19283)"
 
 # 如果有冲突，修改 docker-compose.production.yml 中的端口
 ```
@@ -188,10 +188,10 @@ netstat -tlnp | grep -E "(8080|18001|16379)"
 #### 2. 服务启动失败
 ```bash
 # 查看详细日志
-./manage-production.sh logs
+./manage.sh logs
 
 # 查看特定服务日志
-./manage-production.sh logs api
+./manage.sh logs api
 ```
 
 #### 3. 容器重启循环
@@ -206,22 +206,22 @@ docker-compose -f docker-compose.production.yml logs api
 #### 4. API 无法访问
 ```bash
 # 检查 API 健康状态
-curl http://localhost:18001/api/v1/health
+curl http://localhost:19282/api/v1/health
 
 # 检查防火墙
 sudo ufw status
 
 # 检查端口监听
-netstat -tlnp | grep 18001
+netstat -tlnp | grep 19282
 ```
 
 #### 5. 前端无法访问
 ```bash
 # 检查前端健康状态
-curl http://localhost:8080/health
+curl http://localhost:19280/health
 
 # 检查 Nginx 配置
-./manage-production.sh logs frontend
+./manage.sh logs frontend
 ```
 
 ### 完全重置
@@ -301,14 +301,14 @@ crontab -e
 0 3 * * 0 cd /opt/gravity/deployment && docker system prune -f
 
 # 每天检查服务健康状态
-0 6 * * * cd /opt/gravity/deployment && ./manage-production.sh health
+0 6 * * * cd /opt/gravity/deployment && ./manage.sh health
 ```
 
 ## 🆘 获取帮助
 
-1. **查看状态**: `./manage-production.sh status`
-2. **查看日志**: `./manage-production.sh logs`
-3. **健康检查**: `./manage-production.sh health`
+1. **查看状态**: `./manage.sh status`
+2. **查看日志**: `./manage.sh logs`
+3. **健康检查**: `./manage.sh health`
 4. **GitHub Issues**: https://github.com/billzhuang6569/gravity/issues
 
 ---

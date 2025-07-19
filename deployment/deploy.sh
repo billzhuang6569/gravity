@@ -1,85 +1,65 @@
 #!/bin/bash
 
-# Gravity Video Downloader - 一键部署脚本
+# Gravity Video Downloader - 主部署脚本
+# 使用不常见端口: 19280-19283 避免冲突
 
 set -e
 
-echo "🌌 Gravity Video Downloader - 部署脚本"
-echo "=========================================="
-
-# 检查 Docker 和 Docker Compose
-if ! command -v docker &> /dev/null; then
-    echo "❌ Docker 未安装。请先安装 Docker"
-    exit 1
-fi
-
-if ! command -v docker-compose &> /dev/null; then
-    echo "❌ Docker Compose 未安装。请先安装 Docker Compose"
-    exit 1
-fi
-
-# 检查环境变量文件
-if [ ! -f ".env" ]; then
-    echo "⚠️  未找到 .env 文件，复制默认配置..."
-    cp .env.example .env
-    echo "✅ 已创建 .env 文件，请根据实际情况修改配置"
-    echo "📝 请编辑 .env 文件，然后重新运行此脚本"
-    exit 1
-fi
-
-# 创建SSL证书目录
-mkdir -p ssl
-if [ ! -f "ssl/cert.pem" ] || [ ! -f "ssl/key.pem" ]; then
-    echo "🔐 生成自签名 SSL 证书..."
-    openssl req -x509 -newkey rsa:4096 -keyout ssl/key.pem -out ssl/cert.pem -days 365 -nodes -subj "/CN=localhost"
-    echo "✅ SSL 证书已生成 (自签名)"
-    echo "💡 生产环境请使用 Let's Encrypt 或购买 SSL 证书"
-fi
-
-# 拉取最新镜像
-echo "📦 拉取最新镜像..."
-docker-compose pull
-
-# 构建应用镜像
-echo "🔨 构建应用镜像..."
-docker-compose build
-
-# 启动服务
-echo "🚀 启动服务..."
-docker-compose up -d
-
-# 等待服务启动
-echo "⏳ 等待服务启动..."
-sleep 10
-
-# 检查服务状态
-echo "🔍 检查服务状态..."
-docker-compose ps
-
-# 检查健康状态
-echo "💊 检查健康状态..."
-for i in {1..10}; do
-    if curl -f http://localhost:8001/api/v1/health > /dev/null 2>&1; then
-        echo "✅ API 服务健康"
-        break
-    fi
-    echo "⏳ 等待 API 服务启动... ($i/10)"
-    sleep 5
-done
-
-if curl -f http://localhost > /dev/null 2>&1; then
-    echo "✅ 前端服务健康"
-else
-    echo "⚠️  前端服务可能未正常启动"
-fi
-
+echo "🌌 Gravity Video Downloader - 主部署脚本"
+echo "=================================================="
 echo ""
-echo "🎉 部署完成！"
-echo "=========================================="
-echo "🌐 前端地址: http://localhost (或 https://localhost)"
-echo "🔗 API 地址: http://localhost:8001"
-echo "📊 API 文档: http://localhost:8001/docs"
-echo "🔍 服务状态: docker-compose ps"
-echo "📋 查看日志: docker-compose logs -f"
-echo "🛑 停止服务: docker-compose down"
-echo "=========================================="
+
+# 检查是否为 root 用户
+if [[ $EUID -eq 0 ]]; then
+   echo "⚠️  不建议使用 root 用户运行此脚本"
+   echo "   建议创建普通用户并添加到 docker 组"
+   read -p "是否继续? (y/N): " -n 1 -r
+   echo
+   if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+       exit 1
+   fi
+fi
+
+# 检查部署方式
+echo "请选择部署方式:"
+echo "1. VPS 完整部署 (推荐)"
+echo "2. 仅检查端口冲突"
+echo "3. 查看部署文档"
+echo ""
+read -p "请输入选项 (1-3): " -n 1 -r
+echo
+
+case $REPLY in
+    1)
+        echo "🚀 执行 VPS 完整部署..."
+        if [ -f "deploy-vps.sh" ]; then
+            ./deploy-vps.sh
+        else
+            echo "❌ deploy-vps.sh 文件不存在"
+            exit 1
+        fi
+        ;;
+    2)
+        echo "🔍 检查端口冲突..."
+        if [ -f "check-ports.sh" ]; then
+            ./check-ports.sh
+        else
+            echo "❌ check-ports.sh 文件不存在"
+            exit 1
+        fi
+        ;;
+    3)
+        echo "📚 部署文档..."
+        if [ -f "VPS-DEPLOY.md" ]; then
+            echo "文档位置: VPS-DEPLOY.md"
+            echo "在线查看: https://github.com/billzhuang6569/gravity/blob/main/deployment/VPS-DEPLOY.md"
+        else
+            echo "❌ VPS-DEPLOY.md 文件不存在"
+            exit 1
+        fi
+        ;;
+    *)
+        echo "❌ 无效选项"
+        exit 1
+        ;;
+esac

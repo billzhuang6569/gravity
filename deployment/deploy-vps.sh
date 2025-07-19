@@ -7,7 +7,7 @@ set -e
 
 echo "🌌 Gravity Video Downloader - VPS 一键部署脚本"
 echo "=================================================="
-echo "部署端口: 8080(HTTP), 8443(HTTPS), 18001(API), 16379(Redis)"
+echo "部署端口: 19280(HTTP), 19281(HTTPS), 19282(API), 19283(Redis)"
 echo ""
 
 # 颜色定义
@@ -68,7 +68,7 @@ log_success "依赖检查完成"
 
 # 检查端口冲突
 log_info "检查端口占用情况..."
-PORTS=(8080 8443 18001 16379)
+PORTS=(19280 19281 19282 19283)
 PORT_CONFLICTS=()
 
 for port in "${PORTS[@]}"; do
@@ -158,7 +158,7 @@ fi
 # 检查 API
 log_info "检查 API 服务..."
 for i in {1..10}; do
-    if curl -f http://localhost:18001/api/v1/health >/dev/null 2>&1; then
+    if curl -f http://localhost:19282/api/v1/health >/dev/null 2>&1; then
         log_success "API: 健康"
         break
     fi
@@ -173,7 +173,7 @@ done
 
 # 检查前端
 log_info "检查前端服务..."
-if curl -f http://localhost:8080/health >/dev/null 2>&1; then
+if curl -f http://localhost:19280/health >/dev/null 2>&1; then
     log_success "前端: 健康"
 else
     log_error "前端: 不健康"
@@ -187,16 +187,15 @@ if [ "$HEALTH_CHECK_PASSED" = true ]; then
     log_success "🎉 部署成功！"
     echo ""
     echo "访问地址:"
-    echo "🌐 前端界面: http://$(curl -s ifconfig.me 2>/dev/null || echo 'YOUR-SERVER-IP'):8080"
-    echo "📚 API 文档: http://$(curl -s ifconfig.me 2>/dev/null || echo 'YOUR-SERVER-IP'):18001/docs"
-    echo "🔍 健康检查: http://$(curl -s ifconfig.me 2>/dev/null || echo 'YOUR-SERVER-IP'):8080/health"
+    echo "🌐 前端界面: http://$(curl -s ifconfig.me 2>/dev/null || echo 'YOUR-SERVER-IP'):19280"
+    echo "📚 API 文档: http://$(curl -s ifconfig.me 2>/dev/null || echo 'YOUR-SERVER-IP'):19282/docs"
+    echo "🔍 健康检查: http://$(curl -s ifconfig.me 2>/dev/null || echo 'YOUR-SERVER-IP'):19280/health"
     echo ""
     echo "管理命令:"
     echo "📊 查看状态: ./manage.sh status"
     echo "📋 查看日志: ./manage.sh logs"
     echo "🔄 重启服务: ./manage.sh restart"
     echo "🛑 停止服务: ./manage.sh stop"
-    echo "💾 备份数据: ./manage.sh backup"
 else
     log_error "❌ 部署失败！请检查日志"
     echo ""
