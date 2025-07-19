@@ -392,12 +392,16 @@ async def download_file(filename: str):
                         break
                     yield chunk
         
-        # Return streaming response with simple headers
+        # Return streaming response with proper headers
+        # Use both filename and filename* for better browser compatibility
+        from urllib.parse import quote
+        encoded_filename = quote(decoded_filename.encode('utf-8'))
+        
         return StreamingResponse(
             iterfile(),
             media_type='application/octet-stream',
             headers={
-                "Content-Disposition": f'attachment; filename="{safe_filename}"',
+                "Content-Disposition": f'attachment; filename="{safe_filename}"; filename*=UTF-8\'\'{encoded_filename}',
                 "Content-Length": str(file_size),
                 "Cache-Control": "no-cache"
             }

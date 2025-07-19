@@ -350,10 +350,16 @@ class DownloadComponent {
         const downloadUrl = download.download_url ? 
             `${baseUrl}${download.download_url}` : '';
         
+        // Extract filename from download URL for proper file extension
+        const downloadFilename = download.download_url ? 
+            decodeURIComponent(download.download_url.split('/').pop()) : 
+            `${download.title || '未知标题'}.mp3`;
+        
         console.log('Debug download URL construction:', {
             original: download.download_url,
             baseUrl: baseUrl,
             finalUrl: downloadUrl,
+            filename: downloadFilename,
             configApiBase: CONFIG.API_BASE_URL
         });
         
@@ -367,7 +373,7 @@ class DownloadComponent {
                 </div>
                 <div class="download-actions">
                     ${download.status === 'COMPLETED' && download.download_url ? 
-                        `<button class="btn btn-success" onclick="forceDownload('${downloadUrl}', '${escapeHtml(download.title || '未知标题')}')">下载</button>
+                        `<button class="btn btn-success" onclick="forceDownload('${downloadUrl}', '${escapeHtml(downloadFilename)}')">下载</button>
                          <button class="btn btn-secondary" onclick="removeDownload('${download.task_id}')">移除</button>` : 
                         ''}
                     ${download.status === 'FAILED' ? 
@@ -522,7 +528,7 @@ class HistoryComponent {
                 </div>
                 <div class="download-actions">
                     ${task.status === 'COMPLETED' && task.download_url ? 
-                        `<button class="btn btn-success" onclick="forceDownload('${window.location.origin.replace(':19280', ':19282')}${task.download_url}', '${escapeHtml(task.title || '未知标题')}')">下载</button>` : 
+                        `<button class="btn btn-success" onclick="forceDownload('${window.location.origin.replace(':19280', ':19282')}${task.download_url}', '${escapeHtml(decodeURIComponent(task.download_url.split('/').pop()))}')">下载</button>` : 
                         ''}
                     <button class="btn btn-primary" onclick="redownload('${escapeHtml(task.url)}')">重新下载</button>
                 </div>

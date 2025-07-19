@@ -133,11 +133,18 @@ class TaskStorage:
                     else:
                         logger.info(f"Task {task_id} in progress with state: {result.state}")
                         cached_task.status = TaskStatus.DOWNLOADING
-                        # For STARTED state, show a user-friendly message instead of raw info
+                        # Handle different progress states with user-friendly messages
                         if result.state == 'STARTED':
                             cached_task.progress = "下载中..."
+                        elif result.state == 'PROGRESS':
+                            # If it's progress info, try to extract meaningful data
+                            if isinstance(result.info, dict):
+                                cached_task.progress = result.info.get('progress', '下载中...')
+                            else:
+                                cached_task.progress = "下载中..."
                         else:
-                            cached_task.progress = str(result.info) if result.info else "下载中..."
+                            # For any other state, show generic downloading message
+                            cached_task.progress = "下载中..."
                     
                     cached_task.updated_at = datetime.now()
                     return cached_task
@@ -330,10 +337,23 @@ class TaskStorage:
             List[DownloadTask]: List of recent download tasks
         """
         try:
-            # For now, return empty history to avoid Redis issues
-            # In production, this would query a persistent storage
-            logger.info("Returning empty history to avoid Redis event loop issues")
-            return []
+            # Get completed tasks from memory cache
+            history_tasks = []
+            
+            if hasattr(self, '_task_cache'):
+                for task_id, task in self._task_cache.items():
+                    if task.status == TaskStatus.COMPLETED:
+                        history_tasks.append(task)
+                
+                # Sort by updated_at descending (most recent first)
+                history_tasks.sort(key=lambda x: x.updated_at, reverse=True)
+                
+                # Limit to 20 most recent
+                history_tasks = history_tasks[:20]
+            
+            logger.info(f"Returning {len(history_tasks)} tasks from history")
+            return history_tasks
+            
         except Exception as e:
             logger.error(f"Failed to get history: {str(e)}")
             return []
