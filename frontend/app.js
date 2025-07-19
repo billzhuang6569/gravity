@@ -16,6 +16,9 @@ const CONFIG = {
 // 如果是通过 Nginx 代理访问（端口19280），则使用代理路径
 if (window.location.port === '19280' || window.location.port === '80' || window.location.port === '443' || window.location.port === '') {
     CONFIG.API_BASE_URL = window.location.origin + '/api/v1';
+    console.log('Using proxy path for API:', CONFIG.API_BASE_URL);
+} else {
+    console.log('Using direct API access:', CONFIG.API_BASE_URL);
 }
 
 console.log('API Base URL configured as:', CONFIG.API_BASE_URL);
@@ -46,28 +49,34 @@ class GravityAPI {
             ...options
         };
 
+        console.log(`Making request to: ${url}`);
         let lastError;
         
         for (let attempt = 0; attempt <= CONFIG.MAX_RETRIES; attempt++) {
             try {
                 const response = await fetch(url, config);
+                console.log(`Response status: ${response.status} ${response.statusText}`);
                 
                 if (!response.ok) {
                     const errorData = await response.json().catch(() => ({}));
                     throw new Error(errorData.detail?.error?.message || `HTTP ${response.status}: ${response.statusText}`);
                 }
                 
-                return await response.json();
+                const result = await response.json();
+                console.log('Request successful:', result);
+                return result;
             } catch (error) {
                 lastError = error;
+                console.error(`Request failed (attempt ${attempt + 1}/${CONFIG.MAX_RETRIES + 1}):`, error);
                 
                 if (attempt < CONFIG.MAX_RETRIES) {
-                    console.warn(`Request failed (attempt ${attempt + 1}/${CONFIG.MAX_RETRIES + 1}):`, error.message);
+                    console.warn(`Retrying in ${CONFIG.RETRY_DELAY}ms...`);
                     await new Promise(resolve => setTimeout(resolve, CONFIG.RETRY_DELAY));
                 }
             }
         }
         
+        console.error('All retry attempts failed:', lastError);
         throw lastError;
     }
 
