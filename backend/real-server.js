@@ -200,6 +200,7 @@ app.post('/api/tasks', async (req, res) => {
           tasks[taskIndex].file_name = fileName;
           tasks[taskIndex].file_path = `/downloads/${taskId}/${fileName}`;
           tasks[taskIndex].updated_at = new Date().toISOString();
+          console.log('Task completed with file:', fileName);
         }
       } catch (error) {
         console.error('Download error:', error);

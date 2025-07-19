@@ -379,7 +379,14 @@
         async function downloadFile(taskId) {
             try {
                 console.log('开始下载文件，taskId:', taskId);
+                
+                // 打印所有可用的响应头
                 const response = await fetch(`${API_BASE}/downloads/${taskId}`);
+                console.log('Response status:', response.status);
+                console.log('Response headers:');
+                for (const [key, value] of response.headers.entries()) {
+                    console.log(`  ${key}: ${value}`);
+                }
                 
                 if (response.ok) {
                     // 从响应头获取文件名
@@ -401,6 +408,14 @@
                                 filename = simpleMatch[1];
                                 console.log('解析到的文件名:', filename);
                             }
+                        }
+                    } else {
+                        console.log('Content-Disposition 头为空，尝试从任务信息获取文件名');
+                        // 如果无法从响应头获取，尝试从任务信息获取
+                        const task = tasks.find(t => t.id === taskId);
+                        if (task && task.file_name) {
+                            filename = task.file_name;
+                            console.log('从任务信息获取文件名:', filename);
                         }
                     }
                     
