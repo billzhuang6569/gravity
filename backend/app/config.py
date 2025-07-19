@@ -20,14 +20,30 @@ class Settings(BaseSettings):
     port: int = 8000
     
     # Redis
-    redis_url: str = "redis://localhost:6379/0"
+    redis_host: str = "localhost"
+    redis_port: int = 6379
+    redis_password: Optional[str] = None
+    redis_db: int = 0
     redis_socket_timeout: int = 5
     redis_socket_connect_timeout: int = 5
     redis_max_connections: int = 20
     
-    # Celery
-    celery_broker_url: str = "redis://localhost:6379/0"
-    celery_result_backend: str = "redis://localhost:6379/0"
+    @property
+    def redis_url(self) -> str:
+        """Build Redis URL from components."""
+        if self.redis_password:
+            return f"redis://:{self.redis_password}@{self.redis_host}:{self.redis_port}/{self.redis_db}"
+        return f"redis://{self.redis_host}:{self.redis_port}/{self.redis_db}"
+    
+    @property
+    def celery_broker_url(self) -> str:
+        """Build Celery broker URL from Redis components."""
+        return self.redis_url
+    
+    @property
+    def celery_result_backend(self) -> str:
+        """Build Celery result backend URL from Redis components."""
+        return self.redis_url
     celery_task_soft_time_limit: int = 1800  # 30 minutes
     celery_task_time_limit: int = 1860  # 31 minutes
     celery_worker_concurrency: Optional[int] = None  # Auto-calculate based on CPU cores
