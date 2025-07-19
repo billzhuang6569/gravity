@@ -501,6 +501,12 @@
         .paste-hint {
             animation: pulse 3s ease-in-out infinite;
         }
+
+        /* 进度条闪烁动画 */
+        @keyframes shimmer {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(100%); }
+        }
     </style>
 </head>
 <body>
@@ -698,35 +704,169 @@
         // 渲染初始状态的任务（如果有的话）
         function renderInitialTasks() {
             if (tasks.length > 0) {
-                // 在初始状态下显示任务，但保持毛玻璃的纯粹性
+                // 只显示最近3个任务
+                const recentTasks = tasks.slice(0, 3);
                 const initialState = document.getElementById('initialState');
                 const existingContent = initialState.innerHTML;
                 
                 // 在初始状态下方添加任务列表
                 initialState.innerHTML = existingContent + `
-                    <div class="initial-tasks" style="margin-top: 60px; text-align: left;">
-                        <h3 style="color: rgba(255, 255, 255, 0.7); font-size: 1.2rem; margin-bottom: 20px; text-align: center;">现有任务</h3>
-                        ${tasks.map(task => `
-                            <div class="task" style="background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 16px; padding: 20px; margin-bottom: 16px; backdrop-filter: blur(20px);">
-                                <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px;">
-                                    <div style="flex: 1;">
-                                        <div style="font-weight: 600; color: rgba(255, 255, 255, 0.9); font-size: 1rem; margin-bottom: 8px;">${task.title}</div>
-                                        <div style="color: rgba(255, 255, 255, 0.5); font-size: 0.85rem; word-break: break-all;">${task.url}</div>
+                    <div class="initial-tasks" style="margin-top: 80px;">
+                        <h3 style="color: rgba(255, 255, 255, 0.8); font-size: 1.3rem; margin-bottom: 30px; text-align: center; font-weight: 300; letter-spacing: 1px;">最近任务</h3>
+                        <div style="display: grid; gap: 20px; max-width: 800px; margin: 0 auto;">
+                            ${recentTasks.map(task => `
+                                <div class="task-card" style="
+                                    background: linear-gradient(135deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.05) 100%);
+                                    border: 1px solid rgba(255, 255, 255, 0.15);
+                                    border-radius: 20px;
+                                    padding: 24px;
+                                    backdrop-filter: blur(25px);
+                                    position: relative;
+                                    overflow: hidden;
+                                    transition: all 0.3s ease;
+                                    cursor: pointer;
+                                " onmouseover="this.style.transform='translateY(-4px)'; this.style.boxShadow='0 12px 30px rgba(0, 0, 0, 0.3)';" 
+                                   onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='none';">
+                                    
+                                    <!-- 卡片装饰 -->
+                                    <div style="
+                                        position: absolute;
+                                        top: 0;
+                                        left: 0;
+                                        right: 0;
+                                        height: 1px;
+                                        background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+                                    "></div>
+                                    
+                                    <!-- 状态指示器 -->
+                                    <div style="
+                                        position: absolute;
+                                        top: 20px;
+                                        right: 20px;
+                                        width: 12px;
+                                        height: 12px;
+                                        border-radius: 50%;
+                                        background: ${task.status === 'completed' ? '#198754' : task.status === 'processing' ? '#0dcaf0' : task.status === 'failed' ? '#dc3545' : '#ffc107'};
+                                        box-shadow: 0 0 10px ${task.status === 'completed' ? 'rgba(25, 135, 84, 0.5)' : task.status === 'processing' ? 'rgba(13, 202, 240, 0.5)' : task.status === 'failed' ? 'rgba(220, 53, 69, 0.5)' : 'rgba(255, 193, 7, 0.5)'};
+                                    "></div>
+                                    
+                                    <!-- 任务标题 -->
+                                    <div style="
+                                        font-weight: 600;
+                                        color: rgba(255, 255, 255, 0.95);
+                                        font-size: 1.1rem;
+                                        margin-bottom: 12px;
+                                        line-height: 1.4;
+                                        padding-right: 40px;
+                                    ">${task.title}</div>
+                                    
+                                    <!-- 域名标签 -->
+                                    <div style="
+                                        display: inline-block;
+                                        background: linear-gradient(135deg, rgba(102, 126, 234, 0.2) 0%, rgba(118, 75, 162, 0.2) 100%);
+                                        color: #667eea;
+                                        padding: 6px 14px;
+                                        border-radius: 20px;
+                                        font-size: 0.8rem;
+                                        font-weight: 600;
+                                        text-transform: uppercase;
+                                        letter-spacing: 0.5px;
+                                        margin-bottom: 16px;
+                                        border: 1px solid rgba(102, 126, 234, 0.3);
+                                    ">${getDomain(task.url)}</div>
+                                    
+                                    <!-- 进度条 -->
+                                    <div style="
+                                        width: 100%;
+                                        height: 6px;
+                                        background: rgba(255, 255, 255, 0.1);
+                                        border-radius: 3px;
+                                        overflow: hidden;
+                                        margin-bottom: 16px;
+                                        position: relative;
+                                    ">
+                                        <div style="
+                                            height: 100%;
+                                            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+                                            width: ${task.progress}%;
+                                            border-radius: 3px;
+                                            transition: width 0.3s ease;
+                                            position: relative;
+                                        "></div>
+                                        <div style="
+                                            position: absolute;
+                                            top: 0;
+                                            left: 0;
+                                            right: 0;
+                                            bottom: 0;
+                                            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+                                            animation: shimmer 2s infinite;
+                                        "></div>
                                     </div>
-                                    <div style="padding: 4px 12px; border-radius: 12px; font-size: 0.75rem; font-weight: 600; background: rgba(102, 126, 234, 0.2); color: #667eea;">${formatStatus(task.status)}</div>
+                                    
+                                    <!-- 状态和操作 -->
+                                    <div style="
+                                        display: flex;
+                                        justify-content: space-between;
+                                        align-items: center;
+                                    ">
+                                        <div style="
+                                            color: ${task.status === 'completed' ? '#198754' : task.status === 'processing' ? '#0dcaf0' : task.status === 'failed' ? '#dc3545' : '#ffc107'};
+                                            font-size: 0.85rem;
+                                            font-weight: 600;
+                                            text-transform: uppercase;
+                                            letter-spacing: 0.5px;
+                                        ">${formatStatus(task.status)}</div>
+                                        
+                                        <div style="display: flex; gap: 8px;">
+                                            ${task.status === 'completed' ? 
+                                                `<button onclick="downloadFile('${task.id}')" style="
+                                                    background: linear-gradient(135deg, rgba(25, 135, 84, 0.2) 0%, rgba(25, 135, 84, 0.1) 100%);
+                                                    color: #198754;
+                                                    border: 1px solid rgba(25, 135, 84, 0.3);
+                                                    padding: 8px 16px;
+                                                    border-radius: 12px;
+                                                    font-size: 0.8rem;
+                                                    font-weight: 600;
+                                                    cursor: pointer;
+                                                    transition: all 0.3s ease;
+                                                " onmouseover="this.style.background='linear-gradient(135deg, rgba(25, 135, 84, 0.3) 0%, rgba(25, 135, 84, 0.2) 100%)';" 
+                                                   onmouseout="this.style.background='linear-gradient(135deg, rgba(25, 135, 84, 0.2) 0%, rgba(25, 135, 84, 0.1) 100%)';">
+                                                    📥 下载
+                                                </button>` : 
+                                                ''
+                                            }
+                                            <button onclick="deleteTask('${task.id}')" style="
+                                                background: linear-gradient(135deg, rgba(220, 53, 69, 0.2) 0%, rgba(220, 53, 69, 0.1) 100%);
+                                                color: #dc3545;
+                                                border: 1px solid rgba(220, 53, 69, 0.3);
+                                                padding: 8px 16px;
+                                                border-radius: 12px;
+                                                font-size: 0.8rem;
+                                                font-weight: 600;
+                                                cursor: pointer;
+                                                transition: all 0.3s ease;
+                                            " onmouseover="this.style.background='linear-gradient(135deg, rgba(220, 53, 69, 0.3) 0%, rgba(220, 53, 69, 0.2) 100%)';" 
+                                               onmouseout="this.style.background='linear-gradient(135deg, rgba(220, 53, 69, 0.2) 0%, rgba(220, 53, 69, 0.1) 100%)';">
+                                                🗑️ 删除
+                                            </button>
+                                        </div>
+                                    </div>
                                 </div>
-                                <div style="width: 100%; height: 4px; background: rgba(255, 255, 255, 0.1); border-radius: 2px; overflow: hidden; margin-bottom: 12px;">
-                                    <div style="height: 100%; background: linear-gradient(90deg, #667eea 0%, #764ba2 100%); width: ${task.progress}%; border-radius: 2px;"></div>
-                                </div>
-                                <div style="display: flex; gap: 8px;">
-                                    ${task.status === 'completed' ? 
-                                        `<button onclick="downloadFile('${task.id}')" style="background: rgba(255, 255, 255, 0.1); color: #ffffff; border: 1px solid rgba(255, 255, 255, 0.2); padding: 6px 12px; border-radius: 8px; font-size: 0.8rem; cursor: pointer;">下载</button>` : 
-                                        ''
-                                    }
-                                    <button onclick="deleteTask('${task.id}')" style="background: rgba(220, 53, 69, 0.2); color: #dc3545; border: 1px solid rgba(220, 53, 69, 0.3); padding: 6px 12px; border-radius: 8px; font-size: 0.8rem; cursor: pointer;">删除</button>
-                                </div>
+                            `).join('')}
+                        </div>
+                        
+                        ${tasks.length > 3 ? `
+                            <div style="
+                                text-align: center;
+                                margin-top: 30px;
+                                color: rgba(255, 255, 255, 0.5);
+                                font-size: 0.9rem;
+                                font-weight: 300;
+                            ">
+                                还有 ${tasks.length - 3} 个任务，粘贴链接查看全部
                             </div>
-                        `).join('')}
+                        ` : ''}
                     </div>
                 `;
             }
