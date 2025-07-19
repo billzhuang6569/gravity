@@ -378,11 +378,29 @@
                 const response = await fetch(`${API_BASE}/downloads/${taskId}`);
                 
                 if (response.ok) {
+                    // 从响应头获取文件名
+                    const contentDisposition = response.headers.get('Content-Disposition');
+                    let filename = `download-${taskId}`;
+                    
+                    if (contentDisposition) {
+                        // 解析 filename*=UTF-8'' 格式
+                        const filenameMatch = contentDisposition.match(/filename\*=UTF-8''([^;]+)/);
+                        if (filenameMatch) {
+                            filename = decodeURIComponent(filenameMatch[1]);
+                        } else {
+                            // 尝试解析普通的 filename 格式
+                            const simpleMatch = contentDisposition.match(/filename="([^"]+)"/);
+                            if (simpleMatch) {
+                                filename = simpleMatch[1];
+                            }
+                        }
+                    }
+                    
                     const blob = await response.blob();
                     const url = window.URL.createObjectURL(blob);
                     const a = document.createElement('a');
                     a.href = url;
-                    a.download = `video-${taskId}.mp4`;
+                    a.download = filename;
                     document.body.appendChild(a);
                     a.click();
                     window.URL.revokeObjectURL(url);
