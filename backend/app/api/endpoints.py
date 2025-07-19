@@ -369,10 +369,19 @@ async def download_file(filename: str):
         # Get file size
         file_size = os.path.getsize(file_path)
         
-        # Create a safe filename for download (ASCII only)
+        # Create a safe filename for download, preserving extension
         import re
-        safe_filename = re.sub(r'[^\x00-\x7F]', '_', decoded_filename)
-        safe_filename = safe_filename.replace('"', '')
+        import os
+        
+        # Get file extension
+        file_name, file_ext = os.path.splitext(decoded_filename)
+        
+        # Create safe base name (ASCII only) but keep extension
+        safe_base_name = re.sub(r'[^\x00-\x7F]', '_', file_name)
+        safe_base_name = safe_base_name.replace('"', '')
+        
+        # Combine safe base name with original extension
+        safe_filename = safe_base_name + file_ext
         
         # File streaming generator
         def iterfile():

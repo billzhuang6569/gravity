@@ -133,7 +133,11 @@ class TaskStorage:
                     else:
                         logger.info(f"Task {task_id} in progress with state: {result.state}")
                         cached_task.status = TaskStatus.DOWNLOADING
-                        cached_task.progress = str(result.info) if result.info else "下载中..."
+                        # For STARTED state, show a user-friendly message instead of raw info
+                        if result.state == 'STARTED':
+                            cached_task.progress = "下载中..."
+                        else:
+                            cached_task.progress = str(result.info) if result.info else "下载中..."
                     
                     cached_task.updated_at = datetime.now()
                     return cached_task
