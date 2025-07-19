@@ -100,12 +100,17 @@ class TaskStorage:
                 # Try to get updated status from Celery
                 try:
                     from app.celery_app import celery_app
-                    result = celery_app.AsyncResult(task_id)
+                    
+                    # Use Celery task ID if available, otherwise use business task ID
+                    celery_task_id = getattr(cached_task, 'celery_task_id', task_id)
+                    logger.info(f"Querying Celery for task {task_id} (Celery ID: {celery_task_id})...")
+                    result = celery_app.AsyncResult(celery_task_id)
                     
                     logger.info(f"Celery task {task_id} state: {result.state}, info: {result.info}")
                     
                     # Update task status based on Celery result
                     if result.state == 'PENDING':
+                        logger.info(f"Task {task_id} is still pending in Celery")
                         cached_task.status = TaskStatus.PENDING
                         cached_task.progress = "排队中..."
                     elif result.state == 'SUCCESS':
@@ -117,10 +122,12 @@ class TaskStorage:
                         cached_task.download_url = task_data.get('download_url', '')
                         cached_task.file_path = task_data.get('file_path', '')
                     elif result.state == 'FAILURE':
+                        logger.info(f"Task {task_id} failed with error: {result.info}")
                         cached_task.status = TaskStatus.FAILED
                         cached_task.progress = "失败"
                         cached_task.error_message = str(result.info)
                     else:
+                        logger.info(f"Task {task_id} in progress with state: {result.state}")
                         cached_task.status = TaskStatus.DOWNLOADING
                         cached_task.progress = str(result.info) if result.info else "下载中..."
                     
@@ -128,7 +135,8 @@ class TaskStorage:
                     return cached_task
                     
                 except Exception as e:
-                    logger.warning(f"Could not get Celery status for {task_id}, using cached task: {e}")
+                    logger.error(f"Error querying Celery for task {task_id}: {e}")
+                    logger.warning(f"Using cached task data for {task_id}")
                     return cached_task
             
             # If not in cache, try Celery only

@@ -114,6 +114,7 @@ class DownloadTask(BaseModel):
     file_path: str = Field(default="", description="Local file path")
     download_url: str = Field(default="", description="Public download URL")
     error_message: str = Field(default="", description="Error details if failed")
+    celery_task_id: str = Field(default="", description="Celery task ID for status tracking")
     options: DownloadOptions = Field(description="Download configuration options")
     created_at: datetime = Field(description="Task creation timestamp")
     updated_at: datetime = Field(description="Last update timestamp")
