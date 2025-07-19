@@ -22,8 +22,8 @@
             position: relative;
         }
 
-        /* 抽象背景容器 */
-        #bg-canvas {
+        /* 背景容器 */
+        #box {
             position: fixed;
             top: 0;
             left: 0;
@@ -472,8 +472,8 @@
     </style>
 </head>
 <body>
-    <!-- 抽象背景画布 -->
-    <canvas id="bg-canvas"></canvas>
+    <!-- 背景容器 -->
+    <div id="box"></div>
 
     <div class="main-container">
         <div class="glass-container">
@@ -488,7 +488,7 @@
             <div class="form-state" id="formState">
                 <div class="header">
                     <h1>🎬 Gravity</h1>
-                    <p>现代化视频下载器 - 抽象艺术背景版</p>
+                    <p>现代化视频下载器 - 环境光背景版</p>
                 </div>
 
                 <form id="downloadForm">
@@ -543,39 +543,20 @@
         </symbol>
     </svg>
 
-    <!-- 抽象背景库 -->
-    <script src="AbstractShapeBg.min.js"></script>
+    <!-- 环境光背景库 -->
+    <script type="module">
+        import { AmbientLightBg } from "./AmbientLightBg.module.js";
+
+        let colorbg = new AmbientLightBg({
+            dom: "box",
+            colors: ["#333333","#4d545c","#c69f9f","#cd9898","#b3b3b3","#242424"],
+            loop: true
+        });
+    </script>
 
     <script>
         const API_BASE = 'http://localhost:8088/api';
         let tasks = [];
-        let abstractBg = null;
-
-        // 初始化抽象背景
-        function initAbstractBackground() {
-            try {
-                const canvas = document.getElementById('bg-canvas');
-                if (typeof Color4Bg !== 'undefined' && Color4Bg.AbstractShapeBg) {
-                    abstractBg = new Color4Bg.AbstractShapeBg(canvas, {
-                        color: '#667eea',
-                        backgroundColor: '#0a0a0a',
-                        speed: 0.5,
-                        density: 0.8,
-                        size: 2
-                    });
-                    abstractBg.start();
-                } else {
-                    console.log('AbstractShapeBg not found, using fallback background');
-                    // 备用背景
-                    canvas.style.background = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
-                }
-            } catch (error) {
-                console.error('Failed to initialize abstract background:', error);
-                // 备用背景
-                const canvas = document.getElementById('bg-canvas');
-                canvas.style.background = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
-            }
-        }
 
         // 显示消息
         function showMessage(message, type = 'success') {
@@ -855,9 +836,6 @@
 
         // 页面加载时初始化
         window.addEventListener('load', async () => {
-            // 初始化抽象背景
-            initAbstractBackground();
-            
             // 添加粘贴事件监听
             document.addEventListener('paste', handlePaste);
             
