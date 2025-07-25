@@ -57,6 +57,7 @@ class DownloadRequest(BaseModel):
     # 高级选项
     m3u8: Optional[bool] = False           # -m, --m3u8: 使用m3u8下载
     debug: Optional[bool] = False          # -d, --debug: 调试模式
+    preferred_engine: Optional[str] = None  # 新增：首选引擎 ("you-get" 或 "yt-dlp")
     
     @validator('url')
     def validate_url_length(cls, v):
@@ -68,6 +69,12 @@ class DownloadRequest(BaseModel):
     def validate_proxy_format(cls, v):
         if v and ':' not in v:
             raise ValueError('代理格式应为 HOST:PORT 或 USERNAME:PASSWORD@HOST:PORT')
+        return v
+    
+    @validator('preferred_engine')
+    def validate_preferred_engine(cls, v):
+        if v and v not in ['you-get', 'yt-dlp']:
+            raise ValueError('首选引擎必须是 "you-get" 或 "yt-dlp"')
         return v
 
 class VideoInfo(BaseModel):

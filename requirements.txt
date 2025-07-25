@@ -8,4 +8,5 @@ httpx==0.25.2
 you-get==0.4.1743
 pathlib2==2.3.7
 psutil==5.9.6
-pydantic-settings==2.10.1 
+pydantic-settings==2.10.1
+yt-dlp==2025.07.21 

@@ -7,7 +7,10 @@ from contextlib import asynccontextmanager
 
 from app.config import settings
 from app.api.routes import router
-from app.core.downloader import downloader
+from app.core.unified_downloader import UnifiedDownloader
+
+# 初始化统一下载器
+downloader = UnifiedDownloader()
 
 # 配置日志
 logging.basicConfig(
@@ -28,8 +31,23 @@ async def lifespan(app: FastAPI):
     logger.info("启动视频下载API服务...")
     logger.info(f"下载目录: {settings.download_dir}")
     
-    # 清理启动时的旧文件
-    await downloader.cleanup_old_files(settings.cleanup_interval / 3600)
+    # 启动时清理旧文件
+    import os
+    import time
+    from pathlib import Path
+    
+    def cleanup_old_files():
+        downloads_dir = Path(settings.download_dir)
+        if downloads_dir.exists():
+            for file_path in downloads_dir.glob("*"):
+                if file_path.is_file() and time.time() - file_path.stat().st_mtime > settings.cleanup_interval:
+                    try:
+                        os.remove(file_path)
+                        logger.info(f"清理旧文件: {file_path}")
+                    except Exception as e:
+                        logger.error(f"清理文件失败: {e}")
+    
+    cleanup_old_files()
     
     yield
     

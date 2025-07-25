@@ -12,7 +12,10 @@ from app.models.schemas import (
     DownloadRequest, DownloadResponse, ErrorResponse, 
     HealthResponse, VideoInfo, DownloadMode
 )
-from app.core.downloader import downloader
+from app.core.unified_downloader import UnifiedDownloader
+
+# 初始化统一下载器
+downloader = UnifiedDownloader()
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -36,23 +39,29 @@ async def health_check():
 
 @router.post("/info", response_model=Dict)
 async def get_video_info(request: DownloadRequest):
-    """获取视频信息（不下载）"""
+    """
+    获取视频信息（不下载）
+    支持双引擎：you-get 和 yt-dlp，自动选择最佳引擎或使用指定引擎
+    """
     try:
         url = str(request.url)
         logger.info(f"获取视频信息: {url}")
-        logger.info(f"请求参数: format={request.format}, proxy={request.http_proxy or request.socks_proxy}")
+        logger.info(f"请求参数: format={request.format}, preferred_engine={request.preferred_engine}")
         
-        info = await downloader.get_video_info(url, request)
+        result = await downloader.get_video_info(request, request.preferred_engine)
         
         return {
-            "success": True,
-            "video_info": info,
+            "success": result["success"],
+            "video_info": result["video_info"],
+            "engine_used": result["engine_used"],
+            "available_engines": result["available_engines"],
             "request_options": {
                 "format": request.format,
                 "quality": request.quality,
                 "proxy_used": request.http_proxy or request.socks_proxy,
                 "timeout": request.timeout,
-                "cookies_file": request.cookies_file
+                "cookies_file": request.cookies_file,
+                "preferred_engine": request.preferred_engine
             }
         }
         
@@ -72,19 +81,30 @@ async def download_video(
     try:
         url = str(request.url)
         logger.info(f"下载视频请求: {url}")
-        logger.info(f"下载选项: format={request.format}, quality={request.quality}, proxy={request.http_proxy or request.socks_proxy}")
+        logger.info(f"下载选项: format={request.format}, quality={request.quality}, engine={request.preferred_engine}")
         
         # 下载视频
-        file_path, video_info, download_options = await downloader.download_video(
-            url=url,
-            request=request
-        )
+        result = await downloader.download_video(request, request.preferred_engine)
+        file_path = result["file_path"]
+        video_info = result["video_info"]
+        download_options = result["download_options"]
+        download_options["engine_used"] = result["engine_used"]
         
         # 安排后台清理任务
-        background_tasks.add_task(
-            downloader.cleanup_old_files, 
-            settings.cleanup_interval / 3600
-        )
+        def cleanup_old_files():
+            import os
+            import time
+            downloads_dir = Path("downloads")
+            if downloads_dir.exists():
+                for file_path in downloads_dir.glob("*"):
+                    if file_path.is_file() and time.time() - file_path.stat().st_mtime > settings.cleanup_interval:
+                        try:
+                            os.remove(file_path)
+                            logger.info(f"清理旧文件: {file_path}")
+                        except Exception as e:
+                            logger.error(f"清理文件失败: {e}")
+        
+        background_tasks.add_task(cleanup_old_files)
         
         # 生成下载链接
         filename = Path(file_path).name
@@ -117,19 +137,30 @@ async def download_video_stream(
     try:
         url = str(request.url)
         logger.info(f"流式下载视频: {url}")
-        logger.info(f"下载选项: format={request.format}, quality={request.quality}")
+        logger.info(f"下载选项: format={request.format}, quality={request.quality}, engine={request.preferred_engine}")
         
         # 下载视频
-        file_path, video_info, download_options = await downloader.download_video(
-            url=url,
-            request=request
-        )
+        result = await downloader.download_video(request, request.preferred_engine)
+        file_path = result["file_path"]
+        video_info = result["video_info"]
+        download_options = result["download_options"]
+        download_options["engine_used"] = result["engine_used"]
         
         # 安排后台清理任务
-        background_tasks.add_task(
-            downloader.cleanup_old_files,
-            settings.cleanup_interval / 3600
-        )
+        def cleanup_old_files():
+            import os
+            import time
+            downloads_dir = Path("downloads")
+            if downloads_dir.exists():
+                for file_path in downloads_dir.glob("*"):
+                    if file_path.is_file() and time.time() - file_path.stat().st_mtime > settings.cleanup_interval:
+                        try:
+                            os.remove(file_path)
+                            logger.info(f"清理旧文件: {file_path}")
+                        except Exception as e:
+                            logger.error(f"清理文件失败: {e}")
+        
+        background_tasks.add_task(cleanup_old_files)
         
         # 返回文件响应
         filename = f"{video_info.title}.{video_info.format or 'mp4'}"
@@ -406,3 +437,130 @@ async def suggest_cookies(url: str):
             status_code=500,
             detail=f"建议cookies失败: {str(e)}"
         ) 
+
+# ============= 新增：双引擎管理端点 =============
+
+@router.get("/engines/status")
+async def get_engines_status():
+    """获取所有下载引擎的状态"""
+    try:
+        status = downloader.get_engine_status()
+        return {
+            "success": True,
+            "engines": status,
+            "total_engines": len(status)
+        }
+    except Exception as e:
+        logger.error(f"获取引擎状态失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"获取引擎状态失败: {str(e)}")
+
+@router.get("/engines/supported-sites")
+async def get_supported_sites():
+    """获取所有引擎支持的网站列表"""
+    try:
+        sites = downloader.get_supported_sites()
+        return {
+            "success": True,
+            "supported_sites": sites
+        }
+    except Exception as e:
+        logger.error(f"获取支持网站失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"获取支持网站失败: {str(e)}")
+
+@router.post("/engines/test")
+async def test_engine_with_url(request: Dict[str, str]):
+    """测试指定引擎对特定URL的支持"""
+    try:
+        url = request.get("url")
+        engine_name = request.get("engine")
+        
+        if not url or not engine_name:
+            raise HTTPException(status_code=400, detail="需要提供url和engine参数")
+        
+        # 创建临时请求对象进行测试
+        test_request = DownloadRequest(url=url, preferred_engine=engine_name)
+        
+        try:
+            result = await downloader.get_video_info(test_request, engine_name)
+            return {
+                "success": True,
+                "url": url,
+                "engine": engine_name,
+                "supported": True,
+                "video_info": result["video_info"],
+                "message": f"{engine_name}引擎成功获取视频信息"
+            }
+        except Exception as engine_error:
+            return {
+                "success": False,
+                "url": url,
+                "engine": engine_name,
+                "supported": False,
+                "error": str(engine_error),
+                "message": f"{engine_name}引擎无法处理此URL"
+            }
+            
+    except Exception as e:
+        logger.error(f"引擎测试失败: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"引擎测试失败: {str(e)}")
+
+@router.post("/engines/compare")
+async def compare_engines_for_url(request: Dict[str, str]):
+    """比较两个引擎对同一URL的处理结果"""
+    try:
+        url = request.get("url")
+        if not url:
+            raise HTTPException(status_code=400, detail="需要提供url参数")
+        
+        results = {}
+        test_request = DownloadRequest(url=url)
+        
+        # 测试每个引擎
+        for engine_name in ["you-get", "yt-dlp"]:
+            try:
+                start_time = time.time()
+                result = await downloader.get_video_info(test_request, engine_name)
+                end_time = time.time()
+                
+                results[engine_name] = {
+                    "success": True,
+                    "video_info": result["video_info"],
+                    "response_time": round(end_time - start_time, 2),
+                    "supported": True
+                }
+            except Exception as e:
+                results[engine_name] = {
+                    "success": False,
+                    "error": str(e),
+                    "response_time": 0,
+                    "supported": False
+                }
+        
+        # 分析最佳引擎
+        best_engine = None
+        if results["you-get"]["success"] and results["yt-dlp"]["success"]:
+            # 都成功时，选择响应时间更快的
+            if results["you-get"]["response_time"] < results["yt-dlp"]["response_time"]:
+                best_engine = "you-get"
+            else:
+                best_engine = "yt-dlp"
+        elif results["you-get"]["success"]:
+            best_engine = "you-get"
+        elif results["yt-dlp"]["success"]:
+            best_engine = "yt-dlp"
+        
+        return {
+            "success": True,
+            "url": url,
+            "comparison": results,
+            "recommended_engine": best_engine,
+            "summary": {
+                "you_get_success": results["you-get"]["success"],
+                "yt_dlp_success": results["yt-dlp"]["success"],
+                "best_performance": best_engine
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"引擎比较失败: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"引擎比较失败: {str(e)}") 
