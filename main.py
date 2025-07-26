@@ -159,20 +159,25 @@ class ProgressHook:
             status = d.get('status', 'unknown')
             
             if status == 'downloading':
-                # 从yt-dlp获取准确的进度数据
-                progress_raw = d.get('_percent_str', '0%')
-                progress_decimal = self._parse_percent_str(progress_raw)
-                progress_percentage = progress_decimal * 100
+                # 获取文件大小信息
+                downloaded_bytes = d.get('downloaded_bytes', 0)
+                total_bytes = d.get('total_bytes') or d.get('total_bytes_estimate', 0)
+                
+                # 🎯 直接用字节数计算进度，更准确！
+                if total_bytes > 0:
+                    progress_decimal = min(downloaded_bytes / total_bytes, 1.0)
+                    progress_percentage = progress_decimal * 100
+                else:
+                    # 备用：尝试解析_percent_str
+                    progress_raw = d.get('_percent_str', '0%')
+                    progress_decimal = self._parse_percent_str(progress_raw)
+                    progress_percentage = progress_decimal * 100
                 
                 # 格式化速度信息
                 speed_str = self._format_speed(d.get('speed'))
                 
                 # 格式化ETA
                 eta_str = self._format_eta(d.get('eta'))
-                
-                # 获取文件大小信息
-                downloaded_bytes = d.get('downloaded_bytes', 0)
-                total_bytes = d.get('total_bytes') or d.get('total_bytes_estimate', 0)
                 
                 # 更新全局进度状态 - 保留现有信息
                 current_info = download_progress.get(self.task_id, {})
