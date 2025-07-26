@@ -5,6 +5,7 @@ import json
 import time
 import hashlib
 import uuid
+import re
 from typing import Optional, List, Dict, Any, Union
 from pathlib import Path
 from datetime import datetime
@@ -147,17 +148,49 @@ class ProgressHook:
         
     def __call__(self, d):
         if d['status'] == 'downloading':
+            # 提取百分比数值
+            progress_percent = 0.0
+            if 'downloaded_bytes' in d and 'total_bytes' in d and d['total_bytes']:
+                progress_percent = d['downloaded_bytes'] / d['total_bytes']
+            elif 'downloaded_bytes' in d and 'total_bytes_estimate' in d and d['total_bytes_estimate']:
+                progress_percent = d['downloaded_bytes'] / d['total_bytes_estimate']
+            elif '_percent_str' in d:
+                # 从字符串中提取百分比数值 (例如: "2.9%" -> 0.029)
+                try:
+                    percent_str = d['_percent_str'].strip()
+                    # 移除ANSI颜色代码
+                    percent_str = re.sub(r'\x1b\[[0-9;]*m', '', percent_str)
+                    percent_str = percent_str.replace('%', '').strip()
+                    progress_percent = float(percent_str) / 100.0
+                except:
+                    progress_percent = 0.0
+            
+            # 清理速度和ETA字符串，移除颜色代码
+            speed_str = d.get('_speed_str', 'N/A')
+            eta_str = d.get('_eta_str', 'N/A')
+            
+            if speed_str != 'N/A':
+                speed_str = re.sub(r'\x1b\[[0-9;]*m', '', speed_str).strip()
+            if eta_str != 'N/A':
+                eta_str = re.sub(r'\x1b\[[0-9;]*m', '', eta_str).strip()
+            
             download_progress[self.video_id] = {
                 'status': 'downloading',
-                'progress': d.get('_percent_str', '0%'),
-                'speed': d.get('_speed_str', 'N/A'),
-                'eta': d.get('_eta_str', 'N/A'),
+                'progress_raw': d.get('_percent_str', '0%'),  # 原始进度字符串
+                'progress_decimal': round(progress_percent, 4),  # 小数形式 (0.0-1.0)
+                'progress_percentage': round(progress_percent * 100, 2),  # 百分比形式 (0-100)
+                'speed': speed_str,
+                'eta': eta_str,
+                'downloaded_bytes': d.get('downloaded_bytes', 0),
+                'total_bytes': d.get('total_bytes') or d.get('total_bytes_estimate', 0),
                 'filename': d.get('filename', ''),
                 'timestamp': time.time()
             }
         elif d['status'] == 'finished':
             download_progress[self.video_id] = {
                 'status': 'completed',
+                'progress_decimal': 1.0,
+                'progress_percentage': 100.0,
                 'filename': d.get('filename', ''),
                 'timestamp': time.time()
             }
@@ -314,7 +347,7 @@ async def download_video(request: DownloadRequest):
         
         # 使用线程池执行器立即启动后台任务，确保不阻塞
         loop = asyncio.get_event_loop()
-        loop.run_in_executor(None, download_video_task_sync, str(request.url), request.dict(), task_id)
+        loop.run_in_executor(None, download_video_task_sync, str(request.url), request.model_dump(), task_id)
         print(f"🔍 [DEBUG] 后台任务已启动在独立线程")
         
         # 立即返回响应
