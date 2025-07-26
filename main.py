@@ -223,15 +223,22 @@ class YtDlpProgressParser:
         
         def monitor_output():
             print(f"🔧 [YtDlpProgressParser] 开始监控yt-dlp输出: {self.task_id}")
+            line_count = 0
             
             try:
                 while not self.stop_monitoring and self.process.poll() is None:
                     # 读取stdout的一行
                     line = self.process.stdout.readline()
                     if not line:
+                        print(f"🔧 [YtDlpProgressParser] 读取到空行，退出循环")
                         break
                         
                     line_str = line.decode('utf-8', errors='ignore').strip()
+                    line_count += 1
+                    
+                    # 显示所有输出行用于调试
+                    if line_str:
+                        print(f"🔧 [YtDlpProgressParser] 第{line_count}行: {line_str}")
                     
                     # 解析进度信息
                     progress_info = self.parse_progress_line(line_str)
@@ -244,14 +251,18 @@ class YtDlpProgressParser:
                             **progress_info
                         }
                         
-                        print(f"🔧 [YtDlpProgressParser] 进度更新: {self.task_id} -> {progress_info['progress_percentage']}% ({progress_info['speed']})")
+                        print(f"🔧 [YtDlpProgressParser] ✅ 进度更新: {self.task_id} -> {progress_info['progress_percentage']}% ({progress_info['speed']})")
                     
                     # 也显示其他重要信息
                     if any(keyword in line_str.lower() for keyword in ['error', 'warning', 'finished']):
-                        print(f"🔧 [YtDlpProgressParser] yt-dlp输出: {line_str}")
+                        print(f"🔧 [YtDlpProgressParser] ⚠️ 重要输出: {line_str}")
+                        
+                print(f"🔧 [YtDlpProgressParser] 监控循环结束，共读取{line_count}行")
                         
             except Exception as e:
-                print(f"🔧 [YtDlpProgressParser] 监控出错: {e}")
+                print(f"🔧 [YtDlpProgressParser] ❌ 监控出错: {e}")
+                import traceback
+                traceback.print_exc()
             finally:
                 print(f"🔧 [YtDlpProgressParser] 停止监控: {self.task_id}")
                 
@@ -512,14 +523,25 @@ def download_video_task_sync(url: str, request_dict: dict, temp_video_id: str):
         # 创建进度解析器
         progress_parser = YtDlpProgressParser(temp_video_id)
         
-        # 构建yt-dlp命令行参数
-        cmd_args = ['yt-dlp']
+        # 检查yt-dlp是否可用
+        try:
+            result = subprocess.run(['yt-dlp', '--version'], capture_output=True, text=True, timeout=5)
+            print(f"🔧 [DEBUG] yt-dlp版本: {result.stdout.strip()}")
+        except Exception as e:
+            print(f"🔧 [ERROR] yt-dlp不可用: {e}")
+            # 回退到使用python -m yt_dlp
+            cmd_args = ['python', '-m', 'yt_dlp']
+            print(f"🔧 [DEBUG] 使用python -m yt_dlp")
+        else:
+            cmd_args = ['yt-dlp']
+            print(f"🔧 [DEBUG] 使用yt-dlp命令")
         
         # 基本参数
         cmd_args.extend([
             '--format', download_format,
             '--output', str(DOWNLOAD_DIR / output_template),
-            '--no-warnings'
+            '--no-warnings',
+            '--progress'  # 强制显示进度
         ])
         
         # cookies配置
@@ -553,16 +575,26 @@ def download_video_task_sync(url: str, request_dict: dict, temp_video_id: str):
         print(f"🔧 [DEBUG] 执行yt-dlp命令: {' '.join(cmd_args)}")
         
         # 启动yt-dlp进程
-        ydl_process = subprocess.Popen(
-            cmd_args,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            universal_newlines=False,
-            bufsize=1
-        )
+        try:
+            ydl_process = subprocess.Popen(
+                cmd_args,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                universal_newlines=False,
+                bufsize=1
+            )
+            print(f"🔧 [DEBUG] yt-dlp进程启动成功，PID: {ydl_process.pid}")
+        except Exception as e:
+            print(f"🔧 [ERROR] 启动yt-dlp进程失败: {e}")
+            raise
         
         # 启动进度监控
-        progress_parser.start_monitoring(ydl_process)
+        try:
+            progress_parser.start_monitoring(ydl_process)
+            print(f"🔧 [DEBUG] 进度监控启动成功")
+        except Exception as e:
+            print(f"🔧 [ERROR] 启动进度监控失败: {e}")
+            raise
         
         # 等待进程完成
         return_code = ydl_process.wait()
