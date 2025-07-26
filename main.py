@@ -3,6 +3,7 @@ import tempfile
 import asyncio
 import json
 import time
+import hashlib
 from typing import Optional, List, Dict, Any, Union
 from pathlib import Path
 from datetime import datetime
@@ -296,9 +297,11 @@ async def get_formats(url: str = Query(..., description="视频URL")):
 async def download_video(request: DownloadRequest, background_tasks: BackgroundTasks):
     """下载视频"""
     try:
+        print(f"🔍 [DEBUG] 开始处理下载请求: {request.url}")
+        
         # 生成临时video_id（使用URL的hash）
-        import hashlib
         temp_video_id = hashlib.md5(str(request.url).encode()).hexdigest()[:12]
+        print(f"🔍 [DEBUG] 生成video_id: {temp_video_id}")
         
         # 初始化下载进度
         download_progress[temp_video_id] = {
@@ -306,30 +309,39 @@ async def download_video(request: DownloadRequest, background_tasks: BackgroundT
             'message': '正在获取视频信息...',
             'timestamp': time.time()
         }
+        print(f"🔍 [DEBUG] 初始化下载进度完成")
         
         # 立即启动后台任务处理所有耗时操作
+        print(f"🔍 [DEBUG] 准备添加后台任务")
         background_tasks.add_task(
             download_video_task, 
             str(request.url), 
             request, 
             temp_video_id
         )
+        print(f"🔍 [DEBUG] 后台任务已添加，准备返回响应")
         
-        return {
+        response = {
             "status": "started",
             "video_id": temp_video_id,
             "message": "下载任务已创建，正在获取视频信息...",
             "progress_url": f"/progress/{temp_video_id}"
         }
+        print(f"🔍 [DEBUG] 返回响应: {response}")
+        return response
         
     except Exception as e:
+        print(f"❌ [DEBUG] 异常: {str(e)}")
         raise HTTPException(status_code=400, detail=f"创建下载任务失败: {str(e)}")
 
 async def download_video_task(url: str, request: DownloadRequest, temp_video_id: str):
     """后台下载任务"""
     try:
+        print(f"🔧 [BACKGROUND] 后台任务开始: {temp_video_id}")
+        
         # 设置代理
         setup_proxy_env(url)
+        print(f"🔧 [BACKGROUND] 代理设置完成")
         
         # 更新状态：正在获取视频信息
         download_progress[temp_video_id].update({
