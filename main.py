@@ -153,6 +153,7 @@ class ProgressHook:
         
     def __call__(self, d):
         print(f"🔧 [ProgressHook] 被调用: {self.video_id} - {d.get('status')} - {d.get('_percent_str', 'N/A')}")
+        print(f"🔧 [ProgressHook] 完整数据: {d}")
         if d['status'] == 'downloading':
             # 提取百分比数值
             progress_percent = 0.0
@@ -450,17 +451,17 @@ def download_video_task_sync(url: str, request_dict: dict, temp_video_id: str):
                 'video_id': real_video_id
             }
             
-            # 创建下载选项
+            # 创建下载选项 - 移除quiet模式以确保progress_hooks工作
             progress_hook = ProgressHook(temp_video_id)
             ydl_opts = get_ydl_opts({
                 'format': download_format,
                 'outtmpl': str(DOWNLOAD_DIR / output_template),
-                'quiet': True,
-                'no_warnings': True,
+                'quiet': False,  # 允许输出以确保progress_hooks工作
+                'no_warnings': False,  # 允许warnings以确保progress_hooks工作
+                'progress_hooks': [progress_hook],  # 直接在这里设置
             })
-            # 确保progress_hooks正确设置
-            ydl_opts['progress_hooks'] = [progress_hook]
             print(f"🔧 [DEBUG] Progress hook设置完成: {temp_video_id}")
+            print(f"🔧 [DEBUG] ydl_opts包含progress_hooks: {'progress_hooks' in ydl_opts}")
             
             # 如果请求提取音频
             if request_dict.get('extract_audio', False):
