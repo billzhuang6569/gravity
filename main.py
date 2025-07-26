@@ -8,6 +8,7 @@ import uuid
 import re
 import signal
 import threading
+import shutil
 from typing import Optional, List, Dict, Any, Union
 from pathlib import Path
 from datetime import datetime
@@ -64,6 +65,40 @@ def setup_proxy_env(url: str):
         os.environ.pop('https_proxy', None)
         print(f"🔗 直连访问: {urlparse(url).netloc}")
 
+def copy_to_n8n_shared_dir(source_file: Path) -> tuple[bool, str]:
+    """
+    将文件复制到n8n共享目录
+    
+    Args:
+        source_file: 源文件路径
+        
+    Returns:
+        tuple: (是否成功, n8n容器内的文件路径)
+    """
+    if not N8N_ENABLE_COPY:
+        return False, str(source_file)
+    
+    try:
+        # 确保n8n共享目录存在
+        shared_dir_path = Path(N8N_SHARED_DIR)
+        shared_dir_path.mkdir(parents=True, exist_ok=True)
+        
+        # 目标文件路径
+        target_file = shared_dir_path / source_file.name
+        
+        # 复制文件
+        shutil.copy2(source_file, target_file)
+        
+        # 返回n8n容器内的路径（假设/root/n8n-compose/local-files映射到容器内的/files）
+        n8n_container_path = f"/files/{source_file.name}"
+        
+        print(f"🔗 [N8N] 文件已复制到n8n共享目录: {target_file}")
+        return True, n8n_container_path
+        
+    except Exception as e:
+        print(f"🔴 [N8N] 复制到共享目录失败: {e}")
+        return False, str(source_file)
+
 def get_ydl_opts(base_opts: dict = None) -> dict:
     """获取yt-dlp配置选项，包括cookies设置"""
     if base_opts is None:
@@ -102,6 +137,10 @@ DOWNLOAD_DIR.mkdir(exist_ok=True)
 
 # 项目根目录（用于n8n本地文件访问）
 PROJECT_ROOT = Path(__file__).parent.absolute()
+
+# n8n Docker共享目录配置
+N8N_SHARED_DIR = os.getenv('N8N_SHARED_DIR', '/root/n8n-compose/local-files')
+N8N_ENABLE_COPY = os.getenv('N8N_ENABLE_COPY', 'true').lower() == 'true'
 
 # 存储下载进度
 download_progress = {}
@@ -567,7 +606,17 @@ def download_video_task_sync(url: str, request_dict: dict, temp_video_id: str):
                     break
         
         if final_path.exists():
-            local_path = str(PROJECT_ROOT / "downloads" / final_filename)
+            # 尝试复制到n8n共享目录
+            copy_success, n8n_path = copy_to_n8n_shared_dir(final_path)
+            
+            # 根据复制结果设置local_url
+            if copy_success:
+                local_path = n8n_path  # n8n容器内的路径
+                print(f"🎯 [N8N] 使用n8n容器路径: {local_path}")
+            else:
+                local_path = str(PROJECT_ROOT / "downloads" / final_filename)  # 原始路径
+                print(f"🎯 [N8N] 使用原始路径: {local_path}")
+            
             download_progress[temp_video_id] = {
                 **download_progress[temp_video_id],
                 'status': 'completed',
@@ -578,6 +627,7 @@ def download_video_task_sync(url: str, request_dict: dict, temp_video_id: str):
                 'file_size': final_path.stat().st_size,
                 'download_url': f"/download-direct/{temp_video_id}?filename={final_filename}",
                 'local_url': local_path,
+                'n8n_accessible': copy_success,  # 添加标志位表示是否n8n可访问
                 'timestamp': time.time()
             }
         else:
@@ -923,6 +973,20 @@ async def stop_all_downloads():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"停止下载任务失败: {str(e)}")
 
+@app.get("/n8n-config")
+async def get_n8n_config():
+    """获取n8n集成配置信息"""
+    return {
+        "n8n_enabled": N8N_ENABLE_COPY,
+        "n8n_shared_dir": N8N_SHARED_DIR,
+        "shared_dir_exists": Path(N8N_SHARED_DIR).exists() if N8N_ENABLE_COPY else False,
+        "message": "n8n文件复制已启用" if N8N_ENABLE_COPY else "n8n文件复制已禁用",
+        "instruction": {
+            "enabled": "文件将自动复制到n8n共享目录，在n8n中使用local_url字段访问",
+            "disabled": "要启用n8n集成，请设置环境变量: N8N_ENABLE_COPY=true"
+        }
+    }
+
 def cleanup_download_threads():
     """清理所有活跃的下载线程"""
     if active_download_threads:
@@ -973,6 +1037,12 @@ if __name__ == "__main__":
         print(f"🍪 Cookies配置: 使用{COOKIES_BROWSER}浏览器cookies")
     else:
         print("🚫 未配置cookies")
+    
+    # n8n配置信息
+    if N8N_ENABLE_COPY:
+        print(f"🔗 n8n集成: 启用，共享目录 {N8N_SHARED_DIR}")
+    else:
+        print("🔗 n8n集成: 禁用")
     
     print("💡 提示: 使用 Ctrl+C 优雅停止服务器和所有下载任务")
     
