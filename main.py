@@ -691,3 +691,5 @@ if __name__ == "__main__":
         signal_handler(signal.SIGINT, None)
     finally:
         cleanup_download_threads() 
+
+# 修复进度信息保留问题 - 2024-07-26 
