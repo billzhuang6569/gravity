@@ -14,8 +14,8 @@ from datetime import datetime
 from urllib.parse import urlparse
 
 import yt_dlp
-from fastapi import FastAPI, HTTPException, Query, BackgroundTasks, Request
-from fastapi.responses import FileResponse, StreamingResponse, JSONResponse
+from fastapi import FastAPI, HTTPException, Query, BackgroundTasks, Request, Header
+from fastapi.responses import FileResponse, StreamingResponse, JSONResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, HttpUrl, field_validator
 import aiofiles
@@ -572,7 +572,7 @@ def download_video_task_sync(url: str, request_dict: dict, temp_video_id: str):
                 'video_id': real_video_id,
                 'filename': final_filename,
                 'file_size': final_path.stat().st_size,
-                'download_url': f"/download/{temp_video_id}?filename={final_filename}",
+                'download_url': f"/download-direct/{temp_video_id}?filename={final_filename}",
                 'timestamp': time.time()
             }
         else:
@@ -716,6 +716,139 @@ async def download_binary_for_n8n(
     except Exception as e:
         print(f"🔴 下载端点错误: {e}")
         raise HTTPException(status_code=500, detail=f"文件下载失败: {str(e)}")
+
+@app.get("/download-range/{video_id}")
+async def download_with_range_support(
+    video_id: str, 
+    filename: str = Query(..., description="文件名"),
+    range_header: Optional[str] = Header(None, alias="Range")
+):
+    """支持HTTP Range请求的下载端点 - 解决n8n大文件问题"""
+    try:
+        file_path = DOWNLOAD_DIR / filename
+        
+        if not file_path.exists():
+            raise HTTPException(status_code=404, detail="文件不存在")
+        
+        # 获取文件信息
+        file_stat = file_path.stat()
+        file_size = file_stat.st_size
+        last_modified = datetime.fromtimestamp(file_stat.st_mtime).strftime('%a, %d %b %Y %H:%M:%S GMT')
+        
+        # 解析Range请求
+        start = 0
+        end = file_size - 1
+        
+        if range_header:
+            # 解析 "bytes=start-end" 格式
+            try:
+                range_match = re.match(r'bytes=(\d+)-(\d*)', range_header)
+                if range_match:
+                    start = int(range_match.group(1))
+                    if range_match.group(2):
+                        end = int(range_match.group(2))
+                    else:
+                        end = file_size - 1
+                    
+                    # 确保范围有效
+                    start = max(0, min(start, file_size - 1))
+                    end = max(start, min(end, file_size - 1))
+            except ValueError:
+                pass
+        
+        # 计算内容长度
+        content_length = end - start + 1
+        
+        # 分块流式传输
+        async def generate_range_chunks():
+            chunk_size = 8192  # 8KB chunks
+            current_pos = start
+            
+            async with aiofiles.open(file_path, mode="rb") as file_obj:
+                await file_obj.seek(start)
+                
+                while current_pos <= end:
+                    remaining = end - current_pos + 1
+                    read_size = min(chunk_size, remaining)
+                    
+                    chunk = await file_obj.read(read_size)
+                    if not chunk:
+                        break
+                        
+                    current_pos += len(chunk)
+                    yield chunk
+        
+        # 设置响应头
+        headers = {
+            "Content-Type": "application/octet-stream",
+            "Accept-Ranges": "bytes",
+            "Content-Length": str(content_length),
+            "Last-Modified": last_modified,
+            "ETag": f'"{hashlib.md5(str(file_size).encode() + str(file_stat.st_mtime).encode()).hexdigest()}"',
+            "Cache-Control": "public, max-age=3600",
+        }
+        
+        # 如果是Range请求，返回206 Partial Content
+        if range_header:
+            headers["Content-Range"] = f"bytes {start}-{end}/{file_size}"
+            status_code = 206
+        else:
+            headers["Content-Disposition"] = f'attachment; filename*=utf-8\'\'{filename}'
+            status_code = 200
+        
+        return StreamingResponse(
+            generate_range_chunks(),
+            status_code=status_code,
+            headers=headers,
+            media_type="application/octet-stream"
+        )
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"🔴 Range下载端点错误: {e}")
+        raise HTTPException(status_code=500, detail=f"Range下载失败: {str(e)}")
+
+@app.get("/download-direct/{video_id}")
+async def download_direct_link(
+    video_id: str, 
+    filename: str = Query(..., description="文件名")
+):
+    """直接文件下载链接 - 绕过n8n二进制处理限制"""
+    try:
+        file_path = DOWNLOAD_DIR / filename
+        
+        if not file_path.exists():
+            raise HTTPException(status_code=404, detail="文件不存在")
+        
+        # 对于n8n，返回一个重定向到实际文件或者文件信息
+        file_stat = file_path.stat()
+        file_size = file_stat.st_size
+        
+        # 如果文件太大（超过100MB），建议使用外部下载
+        if file_size > 100 * 1024 * 1024:
+            return JSONResponse({
+                "status": "file_too_large_for_n8n",
+                "file_size": file_size,
+                "file_size_mb": round(file_size / (1024 * 1024), 2),
+                "message": "文件过大，建议使用外部下载工具",
+                "download_url": f"/download-range/{video_id}?filename={filename}",
+                "direct_url": f"http://localhost:8018/download-range/{video_id}?filename={filename}",
+                "suggestion": "请使用wget、curl或浏览器直接下载"
+            })
+        
+        # 小文件直接返回
+        return FileResponse(
+            path=file_path,
+            filename=filename,
+            media_type="application/octet-stream"
+        )
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"🔴 直接下载端点错误: {e}")
+        raise HTTPException(status_code=500, detail=f"直接下载失败: {str(e)}")
 
 @app.delete("/cleanup")
 async def cleanup_files():
