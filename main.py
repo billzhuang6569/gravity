@@ -26,6 +26,7 @@ PROXY_DOMAINS = os.getenv('PROXY_DOMAINS', '').strip().split(',') if os.getenv('
 
 # Cookies配置
 COOKIES_BROWSER = os.getenv('COOKIES_BROWSER', '').strip()
+COOKIES_FILE = os.getenv('COOKIES_FILE', '').strip()
 
 def should_use_proxy(url: str) -> bool:
     """判断是否需要使用代理"""
@@ -64,7 +65,10 @@ def get_ydl_opts(base_opts: dict = None) -> dict:
         base_opts = {}
     
     # 添加cookies配置
-    if COOKIES_BROWSER:
+    if COOKIES_FILE and os.path.exists(COOKIES_FILE):
+        base_opts['cookiefile'] = COOKIES_FILE
+        print(f"🍪 使用cookies文件: {COOKIES_FILE}")
+    elif COOKIES_BROWSER:
         base_opts['cookiesfrombrowser'] = (COOKIES_BROWSER,)
         print(f"🍪 使用{COOKIES_BROWSER}浏览器cookies")
     
@@ -528,9 +532,11 @@ if __name__ == "__main__":
     else:
         print("🔗 直连模式 (未配置代理)")
     
-    if COOKIES_BROWSER:
+    if COOKIES_FILE and os.path.exists(COOKIES_FILE):
+        print(f"🍪 Cookies配置: 使用cookies文件 {COOKIES_FILE}")
+    elif COOKIES_BROWSER:
         print(f"🍪 Cookies配置: 使用{COOKIES_BROWSER}浏览器cookies")
     else:
-        print("🚫 未配置浏览器cookies")
+        print("🚫 未配置cookies")
     
     uvicorn.run(app, host=host, port=port) 
