@@ -610,28 +610,42 @@ async def get_download_progress(video_id: str):
 async def download_file(
     video_id: str, 
     filename: str = Query(..., description="文件名"),
-    stream: bool = Query(False, description="是否流式传输")
+    stream: bool = Query(True, description="是否流式传输")  # 默认改为True
 ):
-    """下载文件"""
+    """下载文件 - 优化为适合n8n等HTTP客户端"""
     try:
         file_path = DOWNLOAD_DIR / filename
         
         if not file_path.exists():
             raise HTTPException(status_code=404, detail="文件不存在")
         
+        # 获取文件大小
+        file_size = file_path.stat().st_size
+        
         if stream:
-            # 流式传输
-            def iterfile():
-                with open(file_path, mode="rb") as file_like:
-                    yield from file_like
+            # 改进的流式传输 - 适合n8n等HTTP客户端
+            async def iterfile():
+                chunk_size = 8192  # 8KB chunks for better streaming
+                async with aiofiles.open(file_path, mode="rb") as file_like:
+                    while chunk := await file_like.read(chunk_size):
+                        yield chunk
+            
+            # 设置适合n8n的响应头
+            headers = {
+                "Content-Disposition": f'attachment; filename*=utf-8\'\'{filename}',
+                "Content-Length": str(file_size),
+                "Accept-Ranges": "bytes",
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive"
+            }
             
             return StreamingResponse(
                 iterfile(),
                 media_type="application/octet-stream",
-                headers={"Content-Disposition": f"attachment; filename={filename}"}
+                headers=headers
             )
         else:
-            # 直接文件响应
+            # 直接文件响应 - 保持向后兼容
             return FileResponse(
                 path=file_path,
                 filename=filename,
@@ -640,6 +654,65 @@ async def download_file(
             
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"文件下载失败: {str(e)}")
+
+@app.get("/download-binary/{video_id}")
+async def download_binary_for_n8n(
+    video_id: str, 
+    filename: str = Query(..., description="文件名")
+):
+    """专门为n8n等HTTP客户端优化的二进制文件下载端点"""
+    try:
+        file_path = DOWNLOAD_DIR / filename
+        
+        if not file_path.exists():
+            raise HTTPException(status_code=404, detail="文件不存在")
+        
+        # 获取文件大小和最后修改时间
+        file_stat = file_path.stat()
+        file_size = file_stat.st_size
+        last_modified = datetime.fromtimestamp(file_stat.st_mtime).strftime('%a, %d %b %Y %H:%M:%S GMT')
+        
+        # 小块流式传输，避免内存问题
+        async def generate_file_chunks():
+            chunk_size = 4096  # 4KB chunks - 更小的块大小
+            try:
+                async with aiofiles.open(file_path, mode="rb") as file_obj:
+                    while True:
+                        chunk = await file_obj.read(chunk_size)
+                        if not chunk:
+                            break
+                        yield chunk
+            except Exception as e:
+                print(f"🔴 文件流传输错误: {e}")
+                raise
+        
+        # 为n8n优化的响应头
+        headers = {
+            "Content-Type": "application/octet-stream",
+            "Content-Disposition": f'attachment; filename*=utf-8\'\'{filename}',
+            "Content-Length": str(file_size),
+            "Content-Transfer-Encoding": "binary",
+            "Accept-Ranges": "bytes",
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0",
+            "Last-Modified": last_modified,
+            # ETag for caching
+            "ETag": f'"{hashlib.md5(str(file_size).encode() + str(file_stat.st_mtime).encode()).hexdigest()}"'
+        }
+        
+        return StreamingResponse(
+            generate_file_chunks(),
+            status_code=200,
+            headers=headers,
+            media_type="application/octet-stream"
+        )
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"🔴 下载端点错误: {e}")
+        raise HTTPException(status_code=500, detail=f"文件下载失败: {str(e)}")
 
 @app.delete("/cleanup")
 async def cleanup_files():
