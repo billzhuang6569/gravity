@@ -100,6 +100,9 @@ app.add_middleware(
 DOWNLOAD_DIR = Path(__file__).parent / "downloads"
 DOWNLOAD_DIR.mkdir(exist_ok=True)
 
+# 项目根目录（用于n8n本地文件访问）
+PROJECT_ROOT = Path(__file__).parent.absolute()
+
 # 存储下载进度
 download_progress = {}
 
@@ -564,6 +567,7 @@ def download_video_task_sync(url: str, request_dict: dict, temp_video_id: str):
                     break
         
         if final_path.exists():
+            local_path = str(PROJECT_ROOT / "downloads" / final_filename)
             download_progress[temp_video_id] = {
                 **download_progress[temp_video_id],
                 'status': 'completed',
@@ -573,6 +577,7 @@ def download_video_task_sync(url: str, request_dict: dict, temp_video_id: str):
                 'filename': final_filename,
                 'file_size': final_path.stat().st_size,
                 'download_url': f"/download-direct/{temp_video_id}?filename={final_filename}",
+                'local_url': local_path,
                 'timestamp': time.time()
             }
         else:
