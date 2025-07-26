@@ -4,6 +4,7 @@ import asyncio
 import json
 import time
 import hashlib
+import uuid
 from typing import Optional, List, Dict, Any, Union
 from pathlib import Path
 from datetime import datetime
@@ -294,47 +295,43 @@ async def get_formats(url: str = Query(..., description="视频URL")):
         raise HTTPException(status_code=400, detail=f"获取格式信息失败: {str(e)}")
 
 @app.post("/download")
-async def download_video(request: DownloadRequest, background_tasks: BackgroundTasks):
+async def download_video(request: DownloadRequest):
     """下载视频"""
     try:
-        print(f"🔍 [DEBUG] 开始处理下载请求: {request.url}")
+        print(f"🔍 [DEBUG] 开始处理下载请求")
         
-        # 生成临时video_id（使用URL的hash）
-        temp_video_id = hashlib.md5(str(request.url).encode()).hexdigest()[:12]
-        print(f"🔍 [DEBUG] 生成video_id: {temp_video_id}")
+        # 生成完全随机的唯一task_id
+        task_id = str(uuid.uuid4())[:12]
+        print(f"🔍 [DEBUG] 生成随机task_id: {task_id}")
         
-        # 初始化下载进度
-        download_progress[temp_video_id] = {
-            'status': 'initializing',
-            'message': '正在获取视频信息...',
+        # 立即初始化进度
+        download_progress[task_id] = {
+            'status': 'pending',
+            'message': '任务已创建，准备开始...',
             'timestamp': time.time()
         }
-        print(f"🔍 [DEBUG] 初始化下载进度完成")
+        print(f"🔍 [DEBUG] 进度初始化完成")
         
-        # 立即启动后台任务处理所有耗时操作
-        print(f"🔍 [DEBUG] 准备添加后台任务")
-        background_tasks.add_task(
-            download_video_task, 
-            str(request.url), 
-            request, 
-            temp_video_id
-        )
-        print(f"🔍 [DEBUG] 后台任务已添加，准备返回响应")
+        # 使用线程池执行器立即启动后台任务，确保不阻塞
+        loop = asyncio.get_event_loop()
+        loop.run_in_executor(None, download_video_task_sync, str(request.url), request.dict(), task_id)
+        print(f"🔍 [DEBUG] 后台任务已启动在独立线程")
         
+        # 立即返回响应
         response = {
             "status": "started",
-            "video_id": temp_video_id,
-            "message": "下载任务已创建，正在获取视频信息...",
-            "progress_url": f"/progress/{temp_video_id}"
+            "video_id": task_id,
+            "message": "下载任务已创建",
+            "progress_url": f"/progress/{task_id}"
         }
-        print(f"🔍 [DEBUG] 返回响应: {response}")
+        print(f"🔍 [DEBUG] 立即返回响应: {task_id}")
         return response
         
     except Exception as e:
         print(f"❌ [DEBUG] 异常: {str(e)}")
-        raise HTTPException(status_code=400, detail=f"创建下载任务失败: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"任务创建失败: {str(e)}")
 
-async def download_video_task(url: str, request: DownloadRequest, temp_video_id: str):
+def download_video_task_sync(url: str, request_dict: dict, temp_video_id: str):
     """后台下载任务"""
     try:
         print(f"🔧 [BACKGROUND] 后台任务开始: {temp_video_id}")
@@ -372,15 +369,15 @@ async def download_video_task(url: str, request: DownloadRequest, temp_video_id:
             safe_title = "".join(c for c in title if c.isalnum() or c in (' ', '-', '_')).rstrip()
             
             # 智能选择格式
-            download_format = request.format
-            if request.format == "best":
+            download_format = request_dict.get('format', 'best')
+            if download_format == "best":
                 download_format = "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/bv*+ba/b"
-            elif request.format == "bestaudio":
+            elif download_format == "bestaudio":
                 download_format = "ba[ext=m4a]/ba"
             
             # 设置输出模板
-            if request.extract_audio:
-                ext = request.audio_format
+            if request_dict.get('extract_audio', False):
+                ext = request_dict.get('audio_format', 'mp3')
                 output_template = f"{safe_title}.%(ext)s"
             else:
                 ext = "mp4"
@@ -404,21 +401,21 @@ async def download_video_task(url: str, request: DownloadRequest, temp_video_id:
             })
             
             # 如果请求提取音频
-            if request.extract_audio:
+            if request_dict.get('extract_audio', False):
                 ydl_opts['postprocessors'] = [{
                     'key': 'FFmpegExtractAudio',
-                    'preferredcodec': request.audio_format,
+                    'preferredcodec': request_dict.get('audio_format', 'mp3'),
                 }]
             
             # 如果请求下载字幕
-            if request.write_subs:
+            if request_dict.get('write_subs', False):
                 ydl_opts['writesubtitles'] = True
                 ydl_opts['writeautomaticsub'] = True
-                ydl_opts['subtitleslangs'] = [request.sub_langs]
+                ydl_opts['subtitleslangs'] = [request_dict.get('sub_langs', 'en')]
             
             # 如果请求下载指定时间段
-            if request.download_sections:
-                ydl_opts['download_sections'] = request.download_sections
+            if request_dict.get('download_sections'):
+                ydl_opts['download_sections'] = request_dict['download_sections']
         
         # 执行下载
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
