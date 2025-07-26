@@ -152,6 +152,7 @@ class ProgressHook:
         self.video_id = video_id
         
     def __call__(self, d):
+        print(f"🔧 [ProgressHook] 被调用: {self.video_id} - {d.get('status')} - {d.get('_percent_str', 'N/A')}")
         if d['status'] == 'downloading':
             # 提取百分比数值
             progress_percent = 0.0
@@ -181,7 +182,7 @@ class ProgressHook:
             
             # 保留已有的非进度信息（如title、message、video_id等）
             current_info = download_progress.get(self.video_id, {})
-            download_progress[self.video_id] = {
+            detailed_progress = {
                 **current_info,  # 保留已有信息
                 'status': 'downloading',
                 'progress_raw': d.get('_percent_str', '0%'),  # 原始进度字符串
@@ -194,6 +195,8 @@ class ProgressHook:
                 'filename': d.get('filename', ''),
                 'timestamp': time.time()
             }
+            download_progress[self.video_id] = detailed_progress
+            print(f"🔧 [ProgressHook] 更新详细进度: {self.video_id} -> {detailed_progress.get('progress_percentage')}%")
         elif d['status'] == 'finished':
             # 保留已有的信息（title、message、video_id等）
             current_info = download_progress.get(self.video_id, {})
@@ -448,13 +451,16 @@ def download_video_task_sync(url: str, request_dict: dict, temp_video_id: str):
             }
             
             # 创建下载选项
+            progress_hook = ProgressHook(temp_video_id)
             ydl_opts = get_ydl_opts({
                 'format': download_format,
                 'outtmpl': str(DOWNLOAD_DIR / output_template),
                 'quiet': True,
                 'no_warnings': True,
-                'progress_hooks': [ProgressHook(temp_video_id)],
             })
+            # 确保progress_hooks正确设置
+            ydl_opts['progress_hooks'] = [progress_hook]
+            print(f"🔧 [DEBUG] Progress hook设置完成: {temp_video_id}")
             
             # 如果请求提取音频
             if request_dict.get('extract_audio', False):
@@ -474,8 +480,10 @@ def download_video_task_sync(url: str, request_dict: dict, temp_video_id: str):
                 ydl_opts['download_sections'] = request_dict['download_sections']
         
         # 执行下载
+        print(f"🔧 [DEBUG] 开始下载，ProgressHook已注册: {temp_video_id}")
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([url])
+        print(f"🔧 [DEBUG] 下载完成: {temp_video_id}")
             
             # 查找下载的文件
             final_filename = f"{safe_title}.{ext}"
