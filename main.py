@@ -6,6 +6,8 @@ import time
 import hashlib
 import uuid
 import re
+import signal
+import threading
 from typing import Optional, List, Dict, Any, Union
 from pathlib import Path
 from datetime import datetime
@@ -100,6 +102,9 @@ DOWNLOAD_DIR.mkdir(exist_ok=True)
 
 # 存储下载进度
 download_progress = {}
+
+# 跟踪活跃的下载线程
+active_download_threads = set()
 
 class DownloadRequest(BaseModel):
     url: HttpUrl
@@ -345,10 +350,15 @@ async def download_video(request: DownloadRequest):
         }
         print(f"🔍 [DEBUG] 进度初始化完成")
         
-        # 使用线程池执行器立即启动后台任务，确保不阻塞
-        loop = asyncio.get_event_loop()
-        loop.run_in_executor(None, download_video_task_sync, str(request.url), request.model_dump(), task_id)
-        print(f"🔍 [DEBUG] 后台任务已启动在独立线程")
+        # 使用可控制的线程启动后台任务
+        download_thread = threading.Thread(
+            target=download_video_task_sync, 
+            args=(str(request.url), request.model_dump(), task_id),
+            daemon=True  # 设置为守护线程，主进程结束时自动结束
+        )
+        active_download_threads.add(download_thread)
+        download_thread.start()
+        print(f"🔍 [DEBUG] 后台任务已启动在独立线程 (thread: {download_thread.name})")
         
         # 立即返回响应
         response = {
@@ -366,8 +376,9 @@ async def download_video(request: DownloadRequest):
 
 def download_video_task_sync(url: str, request_dict: dict, temp_video_id: str):
     """后台下载任务"""
+    current_thread = threading.current_thread()
     try:
-        print(f"🔧 [BACKGROUND] 后台任务开始: {temp_video_id}")
+        print(f"🔧 [BACKGROUND] 后台任务开始: {temp_video_id} (thread: {current_thread.name})")
         
         # 设置代理
         setup_proxy_env(url)
@@ -489,6 +500,10 @@ def download_video_task_sync(url: str, request_dict: dict, temp_video_id: str):
             'error': str(e),
             'timestamp': time.time()
         }
+    finally:
+        # 清理线程引用
+        active_download_threads.discard(current_thread)
+        print(f"🔧 [BACKGROUND] 任务结束，清理线程: {temp_video_id} (thread: {current_thread.name})")
 
 @app.get("/progress/{video_id}")
 async def get_download_progress(video_id: str):
@@ -581,17 +596,62 @@ async def get_stats():
         
         return {
             "download_files_count": len(download_files),
-                    "download_dir_size_bytes": total_size,
-        "download_dir_size_mb": round(total_size / (1024 * 1024), 2),
+            "download_dir_size_bytes": total_size,
+            "download_dir_size_mb": round(total_size / (1024 * 1024), 2),
             "active_downloads": len([p for p in download_progress.values() if p.get('status') == 'downloading']),
             "completed_downloads": len([p for p in download_progress.values() if p.get('status') == 'completed']),
-            "failed_downloads": len([p for p in download_progress.values() if p.get('status') == 'failed'])
+            "failed_downloads": len([p for p in download_progress.values() if p.get('status') == 'failed']),
+            "active_threads": len(active_download_threads),
+            "thread_names": [t.name for t in active_download_threads if t.is_alive()]
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"获取统计信息失败: {str(e)}")
 
+@app.post("/stop-downloads")
+async def stop_all_downloads():
+    """停止所有活跃的下载任务"""
+    try:
+        thread_count = len(active_download_threads)
+        cleanup_download_threads()
+        return {
+            "message": f"已停止 {thread_count} 个下载任务",
+            "stopped_threads": thread_count
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"停止下载任务失败: {str(e)}")
+
+def cleanup_download_threads():
+    """清理所有活跃的下载线程"""
+    if active_download_threads:
+        print(f"🧹 正在清理 {len(active_download_threads)} 个活跃的下载线程...")
+        
+        # 等待所有线程完成，最多等待5秒
+        for thread in list(active_download_threads):
+            if thread.is_alive():
+                print(f"⏳ 等待线程结束: {thread.name}")
+                thread.join(timeout=5)  # 最多等待5秒
+                
+                if thread.is_alive():
+                    print(f"⚠️  线程 {thread.name} 未能正常结束")
+                else:
+                    print(f"✅ 线程 {thread.name} 已结束")
+        
+        active_download_threads.clear()
+        print("🧹 线程清理完成")
+
+def signal_handler(signum, frame):
+    """信号处理器：优雅关闭"""
+    print(f"\n🛑 收到停止信号 ({signum})，正在优雅关闭...")
+    cleanup_download_threads()
+    print("👋 服务器已停止")
+    exit(0)
+
 if __name__ == "__main__":
     import uvicorn
+    
+    # 注册信号处理器
+    signal.signal(signal.SIGINT, signal_handler)   # Ctrl+C
+    signal.signal(signal.SIGTERM, signal_handler)  # 终止信号
     
     # 从环境变量读取服务器配置
     host = os.getenv('SERVER_HOST', '0.0.0.0')
@@ -611,4 +671,11 @@ if __name__ == "__main__":
     else:
         print("🚫 未配置cookies")
     
-    uvicorn.run(app, host=host, port=port) 
+    print("💡 提示: 使用 Ctrl+C 优雅停止服务器和所有下载任务")
+    
+    try:
+        uvicorn.run(app, host=host, port=port)
+    except KeyboardInterrupt:
+        signal_handler(signal.SIGINT, None)
+    finally:
+        cleanup_download_threads() 
