@@ -91,9 +91,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 创建临时目录用于存储下载的文件
-TEMP_DIR = Path(tempfile.gettempdir()) / "ytdlp_api"
-TEMP_DIR.mkdir(exist_ok=True)
+# 创建下载目录用于存储下载的文件（项目内）
+DOWNLOAD_DIR = Path(__file__).parent / "downloads"
+DOWNLOAD_DIR.mkdir(exist_ok=True)
 
 # 存储下载进度
 download_progress = {}
@@ -187,8 +187,8 @@ async def health_check():
         "status": "healthy", 
         "service": "yt-dlp-api",
         "timestamp": datetime.now().isoformat(),
-        "temp_dir": str(TEMP_DIR),
-        "temp_dir_exists": TEMP_DIR.exists()
+        "download_dir": str(DOWNLOAD_DIR),
+        "download_dir_exists": DOWNLOAD_DIR.exists()
     }
 
 @app.get("/info")
@@ -296,14 +296,52 @@ async def get_formats(url: str = Query(..., description="视频URL")):
 async def download_video(request: DownloadRequest, background_tasks: BackgroundTasks):
     """下载视频"""
     try:
-        # 设置代理
-        setup_proxy_env(str(request.url))
+        # 生成临时video_id（使用URL的hash）
+        import hashlib
+        temp_video_id = hashlib.md5(str(request.url).encode()).hexdigest()[:12]
         
-        # 先获取视频信息
+        # 初始化下载进度
+        download_progress[temp_video_id] = {
+            'status': 'initializing',
+            'message': '正在获取视频信息...',
+            'timestamp': time.time()
+        }
+        
+        # 立即启动后台任务处理所有耗时操作
+        background_tasks.add_task(
+            download_video_task, 
+            str(request.url), 
+            request, 
+            temp_video_id
+        )
+        
+        return {
+            "status": "started",
+            "video_id": temp_video_id,
+            "message": "下载任务已创建，正在获取视频信息...",
+            "progress_url": f"/progress/{temp_video_id}"
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"创建下载任务失败: {str(e)}")
+
+async def download_video_task(url: str, request: DownloadRequest, temp_video_id: str):
+    """后台下载任务"""
+    try:
+        # 设置代理
+        setup_proxy_env(url)
+        
+        # 更新状态：正在获取视频信息
+        download_progress[temp_video_id].update({
+            'status': 'extracting_info',
+            'message': '正在获取视频信息...'
+        })
+        
+        # 获取视频信息
         ydl_opts_info = get_ydl_opts({'quiet': True, 'no_warnings': True})
         with yt_dlp.YoutubeDL(ydl_opts_info) as ydl:
-            info = ydl.extract_info(str(request.url), download=False)
-            video_id = info.get('id', 'unknown')
+            info = ydl.extract_info(url, download=False)
+            real_video_id = info.get('id', temp_video_id)
             title = info.get('title', 'video')
             
             # 检查可用格式，排除mhtml等非视频格式
@@ -311,7 +349,12 @@ async def download_video(request: DownloadRequest, background_tasks: BackgroundT
             valid_formats = [f for f in formats if f.get('ext') not in ['mhtml', 'html', 'json']]
             
             if not valid_formats:
-                raise HTTPException(status_code=400, detail="该视频没有可下载的视频格式")
+                download_progress[temp_video_id] = {
+                    'status': 'failed',
+                    'error': '该视频没有可下载的视频格式',
+                    'timestamp': time.time()
+                }
+                return
             
             # 清理文件名中的非法字符
             safe_title = "".join(c for c in title if c.isalnum() or c in (' ', '-', '_')).rstrip()
@@ -319,7 +362,6 @@ async def download_video(request: DownloadRequest, background_tasks: BackgroundT
             # 智能选择格式
             download_format = request.format
             if request.format == "best":
-                # 优先选择mp4格式，如果没有则选择最佳质量
                 download_format = "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/bv*+ba/b"
             elif request.format == "bestaudio":
                 download_format = "ba[ext=m4a]/ba"
@@ -329,16 +371,24 @@ async def download_video(request: DownloadRequest, background_tasks: BackgroundT
                 ext = request.audio_format
                 output_template = f"{safe_title}.%(ext)s"
             else:
-                ext = "mp4"  # 默认使用mp4
+                ext = "mp4"
                 output_template = f"{safe_title}.%(ext)s"
+            
+            # 更新进度：开始下载
+            download_progress[temp_video_id].update({
+                'status': 'downloading',
+                'message': f'正在下载: {title}',
+                'title': title,
+                'video_id': real_video_id
+            })
             
             # 创建下载选项
             ydl_opts = get_ydl_opts({
                 'format': download_format,
-                'outtmpl': str(TEMP_DIR / output_template),
+                'outtmpl': str(DOWNLOAD_DIR / output_template),
                 'quiet': True,
                 'no_warnings': True,
-                'progress_hooks': [ProgressHook(video_id)],
+                'progress_hooks': [ProgressHook(temp_video_id)],
             })
             
             # 如果请求提取音频
@@ -357,62 +407,42 @@ async def download_video(request: DownloadRequest, background_tasks: BackgroundT
             # 如果请求下载指定时间段
             if request.download_sections:
                 ydl_opts['download_sections'] = request.download_sections
-            
-            # 初始化下载进度
-            download_progress[video_id] = {
-                'status': 'starting',
-                'timestamp': time.time()
-            }
-            
-            # 在后台执行下载
-            background_tasks.add_task(download_video_task, str(request.url), ydl_opts, video_id, safe_title, ext)
-            
-            return {
-                "status": "started",
-                "video_id": video_id,
-                "title": title,
-                "message": "下载已开始，请使用 /progress/{video_id} 查看进度",
-                "progress_url": f"/progress/{video_id}"
-            }
-            
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"下载失败: {str(e)}")
-
-async def download_video_task(url: str, ydl_opts: dict, video_id: str, title: str, ext: str):
-    """后台下载任务"""
-    try:
+        
+        # 执行下载
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([url])
             
             # 查找下载的文件
-            final_filename = f"{title}.{ext}"
-            final_path = TEMP_DIR / final_filename
+            final_filename = f"{safe_title}.{ext}"
+            final_path = DOWNLOAD_DIR / final_filename
             
             if not final_path.exists():
                 # 查找实际下载的文件
-                for file in TEMP_DIR.glob(f"*{ext}"):
+                for file in DOWNLOAD_DIR.glob(f"*{ext}"):
                     if file.exists():
                         final_path = file
                         final_filename = file.name
                         break
             
             if final_path.exists():
-                download_progress[video_id] = {
+                download_progress[temp_video_id] = {
                     'status': 'completed',
+                    'title': title,
+                    'video_id': real_video_id,
                     'filename': final_filename,
                     'file_size': final_path.stat().st_size,
-                    'download_url': f"/download/{video_id}?filename={final_filename}",
+                    'download_url': f"/download/{temp_video_id}?filename={final_filename}",
                     'timestamp': time.time()
                 }
             else:
-                download_progress[video_id] = {
+                download_progress[temp_video_id] = {
                     'status': 'failed',
-                    'error': '文件未找到',
+                    'error': '下载完成但找不到文件',
                     'timestamp': time.time()
                 }
                 
     except Exception as e:
-        download_progress[video_id] = {
+        download_progress[temp_video_id] = {
             'status': 'failed',
             'error': str(e),
             'timestamp': time.time()
@@ -438,7 +468,7 @@ async def download_file(
 ):
     """下载文件"""
     try:
-        file_path = TEMP_DIR / filename
+        file_path = DOWNLOAD_DIR / filename
         
         if not file_path.exists():
             raise HTTPException(status_code=404, detail="文件不存在")
@@ -470,7 +500,7 @@ async def cleanup_files():
     """清理临时文件"""
     try:
         count = 0
-        for file in TEMP_DIR.glob("*"):
+        for file in DOWNLOAD_DIR.glob("*"):
             if file.is_file():
                 file.unlink()
                 count += 1
@@ -504,13 +534,13 @@ async def get_supported_sites():
 async def get_stats():
     """获取服务统计信息"""
     try:
-        temp_files = list(TEMP_DIR.glob("*"))
-        total_size = sum(f.stat().st_size for f in temp_files if f.is_file())
+        download_files = list(DOWNLOAD_DIR.glob("*"))
+        total_size = sum(f.stat().st_size for f in download_files if f.is_file())
         
         return {
-            "temp_files_count": len(temp_files),
-            "temp_dir_size_bytes": total_size,
-            "temp_dir_size_mb": round(total_size / (1024 * 1024), 2),
+            "download_files_count": len(download_files),
+                    "download_dir_size_bytes": total_size,
+        "download_dir_size_mb": round(total_size / (1024 * 1024), 2),
             "active_downloads": len([p for p in download_progress.values() if p.get('status') == 'downloading']),
             "completed_downloads": len([p for p in download_progress.values() if p.get('status') == 'completed']),
             "failed_downloads": len([p for p in download_progress.values() if p.get('status') == 'failed'])
