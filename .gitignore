@@ -57,6 +57,10 @@ downloads/
 
 # Environment variables
 .env
+
+# Cookies files (sensitive data)
+cookies.txt
+*.cookies
 .env.local
 .env.*.local
 
