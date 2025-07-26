@@ -175,15 +175,21 @@ class ProgressMonitor:
                         current_time = time.time()
                         
                         # 计算下载速度
-                        if self.last_size > 0:
+                        if self.last_size > 0 and hasattr(self, 'last_update_time'):
                             time_diff = current_time - self.last_update_time
                             size_diff = current_size - self.last_size
-                            if time_diff > 0:
+                            if time_diff > 0 and size_diff > 0:
                                 speed_bps = size_diff / time_diff
                                 self.speed_samples.append(speed_bps)
                                 # 保持最近10个样本
                                 if len(self.speed_samples) > 10:
                                     self.speed_samples.pop(0)
+                        elif self.last_size == 0 and current_size > 0:
+                            # 第一次检测到文件，初始化
+                            elapsed_time = current_time - self.start_time
+                            if elapsed_time > 0:
+                                initial_speed = current_size / elapsed_time
+                                self.speed_samples.append(initial_speed)
                         
                         # 计算平均速度
                         avg_speed = sum(self.speed_samples) / len(self.speed_samples) if self.speed_samples else 0
@@ -195,6 +201,15 @@ class ProgressMonitor:
                             speed_str = f"{avg_speed / 1024:.1f}KB/s"
                         else:
                             speed_str = f"{avg_speed:.0f}B/s"
+                        
+                        # 动态调整预期大小 - 如果实际大小超过预期，调整预期大小
+                        if self.expected_size and current_size > self.expected_size:
+                            # 预期大小明显不准确，根据当前进度动态调整
+                            if current_size > self.expected_size * 1.2:  # 超出20%以上才调整
+                                old_expected = self.expected_size
+                                # 估算最终大小：假设当前是80%进度
+                                self.expected_size = int(current_size / 0.8)
+                                print(f"🔧 [ProgressMonitor] 动态调整预期大小: {old_expected} -> {self.expected_size} bytes ({self.expected_size / (1024*1024):.1f}MB)")
                         
                         # 计算进度
                         if self.expected_size and self.expected_size > 0:
@@ -467,24 +482,48 @@ def download_video_task_sync(url: str, request_dict: dict, temp_video_id: str):
             
             # 获取预期文件大小用于进度计算
             expected_size = None
-            if request_dict.get('format') == 'best':
-                # 尝试从不同格式中获取文件大小信息
-                for fmt in valid_formats:
-                    if fmt.get('filesize'):
-                        expected_size = fmt.get('filesize')
-                        break
-                    elif fmt.get('filesize_approx'):
-                        expected_size = fmt.get('filesize_approx')
-                        break
-                        
-            # 如果没有找到大小信息，尝试从其他字段获取
-            if not expected_size:
+            
+            # 尝试从所有格式中获取最大的文件大小信息
+            print(f"🔧 [DEBUG] 共找到 {len(valid_formats)} 个有效格式")
+            max_filesize = 0
+            for i, fmt in enumerate(valid_formats):
+                fmt_size = fmt.get('filesize') or fmt.get('filesize_approx') or 0
+                if fmt_size > max_filesize:
+                    max_filesize = fmt_size
+                print(f"🔧 [DEBUG] 格式{i}: {fmt.get('format_id', 'unknown')} - 大小: {fmt_size} bytes - 扩展名: {fmt.get('ext', 'unknown')}")
+                
+            if max_filesize > 0:
+                expected_size = max_filesize
+                print(f"🔧 [DEBUG] 使用最大格式大小: {expected_size} bytes")
+            else:
+                # 如果没有找到大小信息，使用改进的估算
                 duration = info.get('duration', 0)
-                if duration:
-                    # 粗略估算：假设平均码率为1Mbps
-                    expected_size = int(duration * 125000)  # 1Mbps = 125KB/s
+                width = info.get('width', 0)
+                height = info.get('height', 0)
+                
+                if duration and width and height:
+                    # 根据分辨率估算更合理的码率
+                    if width >= 1920:  # 1080p及以上
+                        bitrate_kbps = 5000  # 5Mbps
+                    elif width >= 1280:  # 720p
+                        bitrate_kbps = 2500  # 2.5Mbps
+                    elif width >= 854:   # 480p
+                        bitrate_kbps = 1200  # 1.2Mbps
+                    else:  # 360p及以下
+                        bitrate_kbps = 800   # 0.8Mbps
                     
-            print(f"🔧 [BACKGROUND] 视频信息: {title}, 预期大小: {expected_size} bytes")
+                    expected_size = int(duration * bitrate_kbps * 125)  # 转换为字节 (kbps * 125 = bytes/s)
+                    print(f"🔧 [DEBUG] 基于分辨率({width}x{height})和时长({duration}s)估算: {expected_size} bytes (码率: {bitrate_kbps}kbps)")
+                elif duration:
+                    # 保守估算：使用更高的默认码率
+                    expected_size = int(duration * 2000 * 125)  # 2Mbps
+                    print(f"🔧 [DEBUG] 基于时长({duration}s)估算: {expected_size} bytes (默认码率: 2Mbps)")
+                else:
+                    # 最后的备选方案
+                    expected_size = 100 * 1024 * 1024  # 100MB
+                    print(f"🔧 [DEBUG] 使用默认大小: {expected_size} bytes (100MB)")
+                    
+            print(f"🔧 [BACKGROUND] 视频信息: {title}, 预期大小: {expected_size} bytes ({expected_size / (1024*1024):.1f}MB)")
             
             # 创建进度监控器
             progress_monitor = ProgressMonitor(temp_video_id, expected_size)
