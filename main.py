@@ -179,7 +179,10 @@ class ProgressHook:
             if eta_str != 'N/A':
                 eta_str = re.sub(r'\x1b\[[0-9;]*m', '', eta_str).strip()
             
+            # 保留已有的非进度信息（如title、message、video_id等）
+            current_info = download_progress.get(self.video_id, {})
             download_progress[self.video_id] = {
+                **current_info,  # 保留已有信息
                 'status': 'downloading',
                 'progress_raw': d.get('_percent_str', '0%'),  # 原始进度字符串
                 'progress_decimal': round(progress_percent, 4),  # 小数形式 (0.0-1.0)
@@ -192,7 +195,10 @@ class ProgressHook:
                 'timestamp': time.time()
             }
         elif d['status'] == 'finished':
+            # 保留已有的信息（title、message、video_id等）
+            current_info = download_progress.get(self.video_id, {})
             download_progress[self.video_id] = {
+                **current_info,  # 保留已有信息
                 'status': 'completed',
                 'progress_decimal': 1.0,
                 'progress_percentage': 100.0,
