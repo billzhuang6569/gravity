@@ -384,11 +384,13 @@ def download_video_task_sync(url: str, request_dict: dict, temp_video_id: str):
         setup_proxy_env(url)
         print(f"🔧 [BACKGROUND] 代理设置完成")
         
-        # 更新状态：正在获取视频信息
-        download_progress[temp_video_id].update({
+        # 更新状态：正在获取视频信息（保留已有的详细进度信息）
+        current_progress = download_progress[temp_video_id]
+        download_progress[temp_video_id] = {
+            **current_progress,  # 保留已有信息
             'status': 'extracting_info',
             'message': '正在获取视频信息...'
-        })
+        }
         
         # 获取视频信息
         ydl_opts_info = get_ydl_opts({'quiet': True, 'no_warnings': True})
@@ -402,7 +404,9 @@ def download_video_task_sync(url: str, request_dict: dict, temp_video_id: str):
             valid_formats = [f for f in formats if f.get('ext') not in ['mhtml', 'html', 'json']]
             
             if not valid_formats:
+                current_progress = download_progress[temp_video_id]
                 download_progress[temp_video_id] = {
+                    **current_progress,  # 保留已有的详细进度信息
                     'status': 'failed',
                     'error': '该视频没有可下载的视频格式',
                     'timestamp': time.time()
@@ -427,13 +431,15 @@ def download_video_task_sync(url: str, request_dict: dict, temp_video_id: str):
                 ext = "mp4"
                 output_template = f"{safe_title}.%(ext)s"
             
-            # 更新进度：开始下载
-            download_progress[temp_video_id].update({
+            # 更新进度：开始下载（保留已有的详细进度信息）
+            current_progress = download_progress[temp_video_id]
+            download_progress[temp_video_id] = {
+                **current_progress,  # 保留已有信息
                 'status': 'downloading',
                 'message': f'正在下载: {title}',
                 'title': title,
                 'video_id': real_video_id
-            })
+            }
             
             # 创建下载选项
             ydl_opts = get_ydl_opts({
@@ -478,7 +484,9 @@ def download_video_task_sync(url: str, request_dict: dict, temp_video_id: str):
                         break
             
             if final_path.exists():
+                current_progress = download_progress[temp_video_id]
                 download_progress[temp_video_id] = {
+                    **current_progress,  # 保留已有的详细进度信息
                     'status': 'completed',
                     'title': title,
                     'video_id': real_video_id,
@@ -488,14 +496,18 @@ def download_video_task_sync(url: str, request_dict: dict, temp_video_id: str):
                     'timestamp': time.time()
                 }
             else:
+                current_progress = download_progress[temp_video_id]
                 download_progress[temp_video_id] = {
+                    **current_progress,  # 保留已有的详细进度信息
                     'status': 'failed',
                     'error': '下载完成但找不到文件',
                     'timestamp': time.time()
                 }
                 
     except Exception as e:
+        current_progress = download_progress.get(temp_video_id, {})
         download_progress[temp_video_id] = {
+            **current_progress,  # 保留已有的详细进度信息
             'status': 'failed',
             'error': str(e),
             'timestamp': time.time()
