@@ -1,0 +1,29 @@
+[Unit]
+Description=YT-DLP FastAPI Service
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/opt/gravity_v6
+ExecStart=/opt/gravity_v6/venv/bin/python /opt/gravity_v6/main.py
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ytdlp-api
+
+# 环境变量
+Environment=PYTHONPATH=/opt/gravity_v6
+Environment=PYTHONUNBUFFERED=1
+Environment=http_proxy=http://127.0.0.1:10809
+Environment=https_proxy=http://127.0.0.1:10809
+
+# 资源限制
+LimitNOFILE=65536
+MemoryMax=2G
+
+[Install]
+WantedBy=multi-user.target

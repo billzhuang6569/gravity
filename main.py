@@ -6,6 +6,7 @@ import time
 from typing import Optional, List, Dict, Any, Union
 from pathlib import Path
 from datetime import datetime
+from urllib.parse import urlparse
 
 import yt_dlp
 from fastapi import FastAPI, HTTPException, Query, BackgroundTasks, Request
@@ -13,6 +14,61 @@ from fastapi.responses import FileResponse, StreamingResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, HttpUrl, field_validator
 import aiofiles
+from dotenv import load_dotenv
+
+# 加载环境变量
+load_dotenv()
+
+# 代理配置
+HTTP_PROXY = os.getenv('HTTP_PROXY', '').strip()
+HTTPS_PROXY = os.getenv('HTTPS_PROXY', '').strip()
+PROXY_DOMAINS = os.getenv('PROXY_DOMAINS', '').strip().split(',') if os.getenv('PROXY_DOMAINS') else []
+
+# Cookies配置
+COOKIES_BROWSER = os.getenv('COOKIES_BROWSER', '').strip()
+
+def should_use_proxy(url: str) -> bool:
+    """判断是否需要使用代理"""
+    if not HTTP_PROXY or not HTTPS_PROXY:
+        return False
+    
+    try:
+        domain = urlparse(url).netloc.lower()
+        # 移除www前缀
+        if domain.startswith('www.'):
+            domain = domain[4:]
+        
+        # 检查是否在代理域名列表中
+        for proxy_domain in PROXY_DOMAINS:
+            if proxy_domain.strip() and proxy_domain.strip().lower() in domain:
+                return True
+        return False
+    except:
+        return False
+
+def setup_proxy_env(url: str):
+    """根据URL设置代理环境变量"""
+    if should_use_proxy(url):
+        os.environ['http_proxy'] = HTTP_PROXY
+        os.environ['https_proxy'] = HTTPS_PROXY
+        print(f"🌐 使用代理访问: {urlparse(url).netloc}")
+    else:
+        # 清除代理环境变量
+        os.environ.pop('http_proxy', None)
+        os.environ.pop('https_proxy', None)
+        print(f"🔗 直连访问: {urlparse(url).netloc}")
+
+def get_ydl_opts(base_opts: dict = None) -> dict:
+    """获取yt-dlp配置选项，包括cookies设置"""
+    if base_opts is None:
+        base_opts = {}
+    
+    # 添加cookies配置
+    if COOKIES_BROWSER:
+        base_opts['cookiesfrombrowser'] = (COOKIES_BROWSER,)
+        print(f"🍪 使用{COOKIES_BROWSER}浏览器cookies")
+    
+    return base_opts
 
 app = FastAPI(
     title="YT-DLP API",
@@ -135,11 +191,14 @@ async def health_check():
 async def get_video_info(url: str = Query(..., description="视频URL")):
     """获取视频信息"""
     try:
-        ydl_opts = {
+        # 设置代理
+        setup_proxy_env(url)
+        
+        ydl_opts = get_ydl_opts({
             'quiet': True,
             'no_warnings': True,
             'extract_flat': False,
-        }
+        })
         
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
@@ -169,10 +228,13 @@ async def get_video_info(url: str = Query(..., description="视频URL")):
 async def get_formats(url: str = Query(..., description="视频URL")):
     """获取视频的可用格式"""
     try:
-        ydl_opts = {
+        # 设置代理
+        setup_proxy_env(url)
+        
+        ydl_opts = get_ydl_opts({
             'quiet': True,
             'no_warnings': True,
-        }
+        })
         
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
@@ -230,8 +292,11 @@ async def get_formats(url: str = Query(..., description="视频URL")):
 async def download_video(request: DownloadRequest, background_tasks: BackgroundTasks):
     """下载视频"""
     try:
+        # 设置代理
+        setup_proxy_env(str(request.url))
+        
         # 先获取视频信息
-        ydl_opts_info = {'quiet': True, 'no_warnings': True}
+        ydl_opts_info = get_ydl_opts({'quiet': True, 'no_warnings': True})
         with yt_dlp.YoutubeDL(ydl_opts_info) as ydl:
             info = ydl.extract_info(str(request.url), download=False)
             video_id = info.get('id', 'unknown')
@@ -264,13 +329,13 @@ async def download_video(request: DownloadRequest, background_tasks: BackgroundT
                 output_template = f"{safe_title}.%(ext)s"
             
             # 创建下载选项
-            ydl_opts = {
+            ydl_opts = get_ydl_opts({
                 'format': download_format,
                 'outtmpl': str(TEMP_DIR / output_template),
                 'quiet': True,
                 'no_warnings': True,
                 'progress_hooks': [ProgressHook(video_id)],
-            }
+            })
             
             # 如果请求提取音频
             if request.extract_audio:
@@ -451,4 +516,21 @@ async def get_stats():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8018) 
+    
+    # 从环境变量读取服务器配置
+    host = os.getenv('SERVER_HOST', '0.0.0.0')
+    port = int(os.getenv('SERVER_PORT', '8018'))
+    
+    print(f"🚀 启动服务器: {host}:{port}")
+    if HTTP_PROXY and HTTPS_PROXY:
+        print(f"🌐 代理配置: HTTP={HTTP_PROXY}, HTTPS={HTTPS_PROXY}")
+        print(f"📡 代理域名: {', '.join(PROXY_DOMAINS)}")
+    else:
+        print("🔗 直连模式 (未配置代理)")
+    
+    if COOKIES_BROWSER:
+        print(f"🍪 Cookies配置: 使用{COOKIES_BROWSER}浏览器cookies")
+    else:
+        print("🚫 未配置浏览器cookies")
+    
+    uvicorn.run(app, host=host, port=port) 
