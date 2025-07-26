@@ -484,39 +484,39 @@ def download_video_task_sync(url: str, request_dict: dict, temp_video_id: str):
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([url])
         print(f"🔧 [DEBUG] 下载完成: {temp_video_id}")
-            
-            # 查找下载的文件
-            final_filename = f"{safe_title}.{ext}"
-            final_path = DOWNLOAD_DIR / final_filename
-            
-            if not final_path.exists():
-                # 查找实际下载的文件
-                for file in DOWNLOAD_DIR.glob(f"*{ext}"):
-                    if file.exists():
-                        final_path = file
-                        final_filename = file.name
-                        break
-            
-            if final_path.exists():
-                current_progress = download_progress[temp_video_id]
-                download_progress[temp_video_id] = {
-                    **current_progress,  # 保留已有的详细进度信息
-                    'status': 'completed',
-                    'title': title,
-                    'video_id': real_video_id,
-                    'filename': final_filename,
-                    'file_size': final_path.stat().st_size,
-                    'download_url': f"/download/{temp_video_id}?filename={final_filename}",
-                    'timestamp': time.time()
-                }
-            else:
-                current_progress = download_progress[temp_video_id]
-                download_progress[temp_video_id] = {
-                    **current_progress,  # 保留已有的详细进度信息
-                    'status': 'failed',
-                    'error': '下载完成但找不到文件',
-                    'timestamp': time.time()
-                }
+        
+        # 查找下载的文件
+        final_filename = f"{safe_title}.{ext}"
+        final_path = DOWNLOAD_DIR / final_filename
+        
+        if not final_path.exists():
+            # 查找实际下载的文件
+            for file in DOWNLOAD_DIR.glob(f"*{ext}"):
+                if file.exists():
+                    final_path = file
+                    final_filename = file.name
+                    break
+        
+        if final_path.exists():
+            current_progress = download_progress[temp_video_id]
+            download_progress[temp_video_id] = {
+                **current_progress,  # 保留已有的详细进度信息
+                'status': 'completed',
+                'title': title,
+                'video_id': real_video_id,
+                'filename': final_filename,
+                'file_size': final_path.stat().st_size,
+                'download_url': f"/download/{temp_video_id}?filename={final_filename}",
+                'timestamp': time.time()
+            }
+        else:
+            current_progress = download_progress[temp_video_id]
+            download_progress[temp_video_id] = {
+                **current_progress,  # 保留已有的详细进度信息
+                'status': 'failed',
+                'error': '下载完成但找不到文件',
+                'timestamp': time.time()
+            }
                 
     except Exception as e:
         current_progress = download_progress.get(temp_video_id, {})
