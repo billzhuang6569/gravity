@@ -180,9 +180,13 @@ async def get_formats(url: str = Query(..., description="视频URL")):
             
             formats = sanitized_info.get('formats', [])
             
-            # 简化格式信息并按质量排序
+            # 简化格式信息并按质量排序，排除非视频格式
             simplified_formats = []
             for fmt in formats:
+                # 跳过mhtml等非视频格式
+                if fmt.get('ext') in ['mhtml', 'html', 'json']:
+                    continue
+                    
                 simplified_formats.append({
                     'format_id': fmt.get('format_id'),
                     'ext': fmt.get('ext'),
@@ -197,6 +201,10 @@ async def get_formats(url: str = Query(..., description="视频URL")):
                     'format_note': fmt.get('format_note'),
                     'filesize_approx': fmt.get('filesize_approx')
                 })
+            
+            # 如果没有有效格式，返回错误
+            if not simplified_formats:
+                raise HTTPException(status_code=400, detail="该视频没有可用的视频或音频格式")
             
             # 按分辨率排序
             simplified_formats.sort(key=lambda x: (x.get('height', 0) or 0, x.get('width', 0) or 0), reverse=True)
@@ -229,20 +237,35 @@ async def download_video(request: DownloadRequest, background_tasks: BackgroundT
             video_id = info.get('id', 'unknown')
             title = info.get('title', 'video')
             
+            # 检查可用格式，排除mhtml等非视频格式
+            formats = info.get('formats', [])
+            valid_formats = [f for f in formats if f.get('ext') not in ['mhtml', 'html', 'json']]
+            
+            if not valid_formats:
+                raise HTTPException(status_code=400, detail="该视频没有可下载的视频格式")
+            
             # 清理文件名中的非法字符
             safe_title = "".join(c for c in title if c.isalnum() or c in (' ', '-', '_')).rstrip()
+            
+            # 智能选择格式
+            download_format = request.format
+            if request.format == "best":
+                # 优先选择mp4格式，如果没有则选择最佳质量
+                download_format = "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/bv*+ba/b"
+            elif request.format == "bestaudio":
+                download_format = "ba[ext=m4a]/ba"
             
             # 设置输出模板
             if request.extract_audio:
                 ext = request.audio_format
                 output_template = f"{safe_title}.%(ext)s"
             else:
-                ext = info.get('ext', 'mp4')
+                ext = "mp4"  # 默认使用mp4
                 output_template = f"{safe_title}.%(ext)s"
             
             # 创建下载选项
             ydl_opts = {
-                'format': request.format,
+                'format': download_format,
                 'outtmpl': str(TEMP_DIR / output_template),
                 'quiet': True,
                 'no_warnings': True,
