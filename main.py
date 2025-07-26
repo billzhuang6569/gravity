@@ -495,13 +495,13 @@ def download_video_task_sync(url: str, request_dict: dict, temp_video_id: str):
         elif download_format == "bestaudio":
             download_format = "ba[ext=m4a]/ba"
         
-        # 设置输出模板
+        # 🎯 设置唯一输出模板 - 加入task_id确保每次下载都有唯一文件名
         if request_dict.get('extract_audio', False):
             ext = request_dict.get('audio_format', 'mp3')
-            output_template = f"{safe_title}.%(ext)s"
+            output_template = f"{safe_title}_{temp_video_id}.%(ext)s"
         else:
             ext = "mp4"
-            output_template = f"{safe_title}.%(ext)s"
+            output_template = f"{safe_title}_{temp_video_id}.%(ext)s"
         
         # 更新进度：开始下载
         download_progress[temp_video_id] = {
@@ -551,13 +551,13 @@ def download_video_task_sync(url: str, request_dict: dict, temp_video_id: str):
         
         print(f"🎯 [DEBUG] yt-dlp下载完成: {temp_video_id}")
         
-        # 查找下载的文件
-        final_filename = f"{safe_title}.{ext}"
+        # 🎯 查找下载的文件 - 使用包含task_id的唯一文件名
+        final_filename = f"{safe_title}_{temp_video_id}.{ext}"
         final_path = DOWNLOAD_DIR / final_filename
         
         if not final_path.exists():
-            # 查找实际下载的文件
-            for file in DOWNLOAD_DIR.glob(f"*{ext}"):
+            # 查找实际下载的文件（按task_id匹配）
+            for file in DOWNLOAD_DIR.glob(f"*{temp_video_id}*.{ext}"):
                 if file.exists():
                     final_path = file
                     final_filename = file.name
@@ -567,6 +567,7 @@ def download_video_task_sync(url: str, request_dict: dict, temp_video_id: str):
             download_progress[temp_video_id] = {
                 **download_progress[temp_video_id],
                 'status': 'completed',
+                'message': f'下载完成: {title}',
                 'title': title,
                 'video_id': real_video_id,
                 'filename': final_filename,
@@ -578,6 +579,7 @@ def download_video_task_sync(url: str, request_dict: dict, temp_video_id: str):
             download_progress[temp_video_id] = {
                 **download_progress[temp_video_id],
                 'status': 'failed',
+                'message': '下载失败: 找不到下载文件',
                 'error': '下载完成但找不到文件',
                 'timestamp': time.time()
             }
@@ -586,6 +588,7 @@ def download_video_task_sync(url: str, request_dict: dict, temp_video_id: str):
         download_progress[temp_video_id] = {
             **download_progress.get(temp_video_id, {}),
             'status': 'failed',
+            'message': f'下载失败: {str(e)}',
             'error': str(e),
             'timestamp': time.time()
         }
