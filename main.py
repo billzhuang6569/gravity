@@ -8,6 +8,7 @@ import uuid
 import re
 import signal
 import threading
+import subprocess
 from typing import Optional, List, Dict, Any, Union
 from pathlib import Path
 from datetime import datetime
@@ -147,120 +148,122 @@ class DownloadProgress(BaseModel):
     filename: Optional[str] = None
     error: Optional[str] = None
 
-class ProgressMonitor:
-    """基于文件大小监控和定时器的进度跟踪系统"""
+class YtDlpProgressParser:
+    """基于yt-dlp输出解析的进度跟踪系统"""
     
-    def __init__(self, task_id: str, expected_size: int = None):
+    def __init__(self, task_id: str):
         self.task_id = task_id
-        self.expected_size = expected_size
+        self.process = None
         self.monitor_thread = None
         self.stop_monitoring = False
-        self.download_file_path = None
-        self.start_time = time.time()
-        self.last_size = 0
-        self.last_update_time = time.time()
-        self.speed_samples = []
         
-    def start_monitoring(self, file_path: Path):
-        """开始监控下载进度"""
-        self.download_file_path = file_path
+    def parse_progress_line(self, line: str):
+        """解析yt-dlp的进度输出行"""
+        try:
+            # 典型格式: [download]  27.7% of    3.60MiB at    2.09MiB/s ETA 00:01
+            if '[download]' not in line:
+                return None
+                
+            # 移除ANSI颜色代码
+            clean_line = re.sub(r'\x1b\[[0-9;]*m', '', line).strip()
+            
+            # 提取百分比
+            progress_match = re.search(r'(\d+\.?\d*)%', clean_line)
+            progress_percentage = float(progress_match.group(1)) if progress_match else 0.0
+            progress_decimal = progress_percentage / 100.0
+            
+            # 提取文件大小
+            size_match = re.search(r'of\s+([0-9.]+)(KiB|MiB|GiB|B)', clean_line)
+            total_bytes = 0
+            if size_match:
+                size_val = float(size_match.group(1))
+                size_unit = size_match.group(2)
+                if size_unit == 'GiB':
+                    total_bytes = int(size_val * 1024 * 1024 * 1024)
+                elif size_unit == 'MiB':
+                    total_bytes = int(size_val * 1024 * 1024)
+                elif size_unit == 'KiB':
+                    total_bytes = int(size_val * 1024)
+                else:  # B
+                    total_bytes = int(size_val)
+            
+            # 计算已下载字节数
+            downloaded_bytes = int(total_bytes * progress_decimal) if total_bytes > 0 else 0
+            
+            # 提取速度
+            speed_match = re.search(r'at\s+([0-9.]+)(KiB/s|MiB/s|GiB/s|B/s)', clean_line)
+            speed_str = "0B/s"
+            if speed_match:
+                speed_val = float(speed_match.group(1))
+                speed_unit = speed_match.group(2)
+                speed_str = f"{speed_val:.1f}{speed_unit}"
+            
+            # 提取ETA
+            eta_match = re.search(r'ETA\s+(\d{2}:\d{2})', clean_line)
+            eta_str = eta_match.group(1) if eta_match else "未知"
+            
+            return {
+                'progress_decimal': round(progress_decimal, 4),
+                'progress_percentage': round(progress_percentage, 2),
+                'speed': speed_str,
+                'eta': eta_str,
+                'downloaded_bytes': downloaded_bytes,
+                'total_bytes': total_bytes,
+                'timestamp': time.time()
+            }
+            
+        except Exception as e:
+            print(f"🔧 [YtDlpProgressParser] 解析错误: {e}, 行内容: {line}")
+            return None
+    
+    def start_monitoring(self, process):
+        """开始监控yt-dlp进程的输出"""
+        self.process = process
         self.stop_monitoring = False
         
-        def monitor_progress():
-            print(f"🔧 [ProgressMonitor] 开始监控: {self.task_id} -> {file_path}")
-            while not self.stop_monitoring:
-                try:
-                    if file_path.exists():
-                        current_size = file_path.stat().st_size
-                        current_time = time.time()
+        def monitor_output():
+            print(f"🔧 [YtDlpProgressParser] 开始监控yt-dlp输出: {self.task_id}")
+            
+            try:
+                while not self.stop_monitoring and self.process.poll() is None:
+                    # 读取stdout的一行
+                    line = self.process.stdout.readline()
+                    if not line:
+                        break
                         
-                        # 计算下载速度
-                        if self.last_size > 0 and hasattr(self, 'last_update_time'):
-                            time_diff = current_time - self.last_update_time
-                            size_diff = current_size - self.last_size
-                            if time_diff > 0 and size_diff > 0:
-                                speed_bps = size_diff / time_diff
-                                self.speed_samples.append(speed_bps)
-                                # 保持最近10个样本
-                                if len(self.speed_samples) > 10:
-                                    self.speed_samples.pop(0)
-                        elif self.last_size == 0 and current_size > 0:
-                            # 第一次检测到文件，初始化
-                            elapsed_time = current_time - self.start_time
-                            if elapsed_time > 0:
-                                initial_speed = current_size / elapsed_time
-                                self.speed_samples.append(initial_speed)
-                        
-                        # 计算平均速度
-                        avg_speed = sum(self.speed_samples) / len(self.speed_samples) if self.speed_samples else 0
-                        
-                        # 格式化速度
-                        if avg_speed > 1024 * 1024:
-                            speed_str = f"{avg_speed / (1024 * 1024):.1f}MB/s"
-                        elif avg_speed > 1024:
-                            speed_str = f"{avg_speed / 1024:.1f}KB/s"
-                        else:
-                            speed_str = f"{avg_speed:.0f}B/s"
-                        
-                        # 动态调整预期大小 - 如果实际大小超过预期，调整预期大小
-                        if self.expected_size and current_size > self.expected_size:
-                            # 预期大小明显不准确，根据当前进度动态调整
-                            if current_size > self.expected_size * 1.2:  # 超出20%以上才调整
-                                old_expected = self.expected_size
-                                # 估算最终大小：假设当前是80%进度
-                                self.expected_size = int(current_size / 0.8)
-                                print(f"🔧 [ProgressMonitor] 动态调整预期大小: {old_expected} -> {self.expected_size} bytes ({self.expected_size / (1024*1024):.1f}MB)")
-                        
-                        # 计算进度
-                        if self.expected_size and self.expected_size > 0:
-                            progress_decimal = min(current_size / self.expected_size, 1.0)
-                            progress_percentage = progress_decimal * 100
-                            
-                            # 计算ETA
-                            if avg_speed > 0 and current_size < self.expected_size:
-                                remaining_bytes = self.expected_size - current_size
-                                eta_seconds = remaining_bytes / avg_speed
-                                eta_str = f"{int(eta_seconds // 60):02d}:{int(eta_seconds % 60):02d}"
-                            else:
-                                eta_str = "未知"
-                        else:
-                            progress_decimal = 0.0
-                            progress_percentage = 0.0
-                            eta_str = "未知"
-                        
-                        # 更新progress信息
+                    line_str = line.decode('utf-8', errors='ignore').strip()
+                    
+                    # 解析进度信息
+                    progress_info = self.parse_progress_line(line_str)
+                    if progress_info:
+                        # 更新progress字典
                         current_info = download_progress.get(self.task_id, {})
                         download_progress[self.task_id] = {
                             **current_info,
                             'status': 'downloading',
-                            'progress_decimal': round(progress_decimal, 4),
-                            'progress_percentage': round(progress_percentage, 2),
-                            'speed': speed_str,
-                            'eta': eta_str,
-                            'downloaded_bytes': current_size,
-                            'total_bytes': self.expected_size or 0,
-                            'timestamp': current_time
+                            **progress_info
                         }
                         
-                        self.last_size = current_size
-                        self.last_update_time = current_time
-                        
-                        print(f"🔧 [ProgressMonitor] 进度更新: {self.task_id} -> {progress_percentage:.1f}% ({speed_str})")
-                        
-                    time.sleep(2)  # 每2秒更新一次
-                except Exception as e:
-                    print(f"🔧 [ProgressMonitor] 监控错误: {e}")
-                    time.sleep(2)
+                        print(f"🔧 [YtDlpProgressParser] 进度更新: {self.task_id} -> {progress_info['progress_percentage']}% ({progress_info['speed']})")
                     
-        self.monitor_thread = threading.Thread(target=monitor_progress, daemon=True)
+                    # 也显示其他重要信息
+                    if any(keyword in line_str.lower() for keyword in ['error', 'warning', 'finished']):
+                        print(f"🔧 [YtDlpProgressParser] yt-dlp输出: {line_str}")
+                        
+            except Exception as e:
+                print(f"🔧 [YtDlpProgressParser] 监控出错: {e}")
+            finally:
+                print(f"🔧 [YtDlpProgressParser] 停止监控: {self.task_id}")
+                
+        self.monitor_thread = threading.Thread(target=monitor_output, daemon=True)
         self.monitor_thread.start()
         
     def stop_monitoring_progress(self):
         """停止监控"""
         self.stop_monitoring = True
         if self.monitor_thread and self.monitor_thread.is_alive():
-            self.monitor_thread.join(timeout=1)
-            print(f"🔧 [ProgressMonitor] 停止监控: {self.task_id}")
+            self.monitor_thread.join(timeout=2)
+            print(f"🔧 [YtDlpProgressParser] 监控线程已停止: {self.task_id}")
 
 @app.get("/")
 async def root():
@@ -439,7 +442,8 @@ async def download_video(request: DownloadRequest):
 def download_video_task_sync(url: str, request_dict: dict, temp_video_id: str):
     """后台下载任务"""
     current_thread = threading.current_thread()
-    progress_monitor = None
+    progress_parser = None
+    ydl_process = None
     
     try:
         print(f"🔧 [BACKGROUND] 后台任务开始: {temp_video_id} (thread: {current_thread.name})")
@@ -448,10 +452,10 @@ def download_video_task_sync(url: str, request_dict: dict, temp_video_id: str):
         setup_proxy_env(url)
         print(f"🔧 [BACKGROUND] 代理设置完成")
         
-        # 更新状态：正在获取视频信息（保留已有的详细进度信息）
+        # 更新状态：正在获取视频信息
         current_progress = download_progress[temp_video_id]
         download_progress[temp_video_id] = {
-            **current_progress,  # 保留已有信息
+            **current_progress,
             'status': 'extracting_info',
             'message': '正在获取视频信息...'
         }
@@ -477,124 +481,107 @@ def download_video_task_sync(url: str, request_dict: dict, temp_video_id: str):
                 }
                 return
             
-            # 清理文件名中的非法字符
-            safe_title = "".join(c for c in title if c.isalnum() or c in (' ', '-', '_')).rstrip()
-            
-            # 获取预期文件大小用于进度计算
-            expected_size = None
-            
-            # 尝试从所有格式中获取最大的文件大小信息
-            print(f"🔧 [DEBUG] 共找到 {len(valid_formats)} 个有效格式")
-            max_filesize = 0
-            for i, fmt in enumerate(valid_formats):
-                fmt_size = fmt.get('filesize') or fmt.get('filesize_approx') or 0
-                if fmt_size > max_filesize:
-                    max_filesize = fmt_size
-                print(f"🔧 [DEBUG] 格式{i}: {fmt.get('format_id', 'unknown')} - 大小: {fmt_size} bytes - 扩展名: {fmt.get('ext', 'unknown')}")
-                
-            if max_filesize > 0:
-                expected_size = max_filesize
-                print(f"🔧 [DEBUG] 使用最大格式大小: {expected_size} bytes")
-            else:
-                # 如果没有找到大小信息，使用改进的估算
-                duration = info.get('duration', 0)
-                width = info.get('width', 0)
-                height = info.get('height', 0)
-                
-                if duration and width and height:
-                    # 根据分辨率估算更合理的码率
-                    if width >= 1920:  # 1080p及以上
-                        bitrate_kbps = 5000  # 5Mbps
-                    elif width >= 1280:  # 720p
-                        bitrate_kbps = 2500  # 2.5Mbps
-                    elif width >= 854:   # 480p
-                        bitrate_kbps = 1200  # 1.2Mbps
-                    else:  # 360p及以下
-                        bitrate_kbps = 800   # 0.8Mbps
-                    
-                    expected_size = int(duration * bitrate_kbps * 125)  # 转换为字节 (kbps * 125 = bytes/s)
-                    print(f"🔧 [DEBUG] 基于分辨率({width}x{height})和时长({duration}s)估算: {expected_size} bytes (码率: {bitrate_kbps}kbps)")
-                elif duration:
-                    # 保守估算：使用更高的默认码率
-                    expected_size = int(duration * 2000 * 125)  # 2Mbps
-                    print(f"🔧 [DEBUG] 基于时长({duration}s)估算: {expected_size} bytes (默认码率: 2Mbps)")
-                else:
-                    # 最后的备选方案
-                    expected_size = 100 * 1024 * 1024  # 100MB
-                    print(f"🔧 [DEBUG] 使用默认大小: {expected_size} bytes (100MB)")
-                    
-            print(f"🔧 [BACKGROUND] 视频信息: {title}, 预期大小: {expected_size} bytes ({expected_size / (1024*1024):.1f}MB)")
-            
-            # 创建进度监控器
-            progress_monitor = ProgressMonitor(temp_video_id, expected_size)
-            
-            # 智能选择格式
-            download_format = request_dict.get('format', 'best')
-            if download_format == "best":
-                download_format = "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/bv*+ba/b"
-            elif download_format == "bestaudio":
-                download_format = "ba[ext=m4a]/ba"
-            
-            # 设置输出模板
-            if request_dict.get('extract_audio', False):
-                ext = request_dict.get('audio_format', 'mp3')
-                output_template = f"{safe_title}.%(ext)s"
-            else:
-                ext = "mp4"
-                output_template = f"{safe_title}.%(ext)s"
-            
-            # 更新进度：开始下载（保留已有的详细进度信息）
-            current_progress = download_progress[temp_video_id]
-            download_progress[temp_video_id] = {
-                **current_progress,  # 保留已有信息
-                'status': 'downloading',
-                'message': f'正在下载: {title}',
-                'title': title,
-                'video_id': real_video_id
-            }
-            
-            # 计算预期的文件路径
-            expected_file_path = DOWNLOAD_DIR / f"{safe_title}.{ext}"
-            
-            # 启动进度监控
-            if progress_monitor:
-                progress_monitor.start_monitoring(expected_file_path)
-                print(f"🔧 [DEBUG] 进度监控已启动: {temp_video_id} -> {expected_file_path}")
-            
-            # 创建下载选项 - 使用简化的设置
-            ydl_opts = get_ydl_opts({
-                'format': download_format,
-                'outtmpl': str(DOWNLOAD_DIR / output_template),
-                'quiet': True,  # 安静模式，减少输出
-                'no_warnings': True,
-            })
-            
-            # 如果请求提取音频
-            if request_dict.get('extract_audio', False):
-                ydl_opts['postprocessors'] = [{
-                    'key': 'FFmpegExtractAudio',
-                    'preferredcodec': request_dict.get('audio_format', 'mp3'),
-                }]
-            
-            # 如果请求下载字幕
-            if request_dict.get('write_subs', False):
-                ydl_opts['writesubtitles'] = True
-                ydl_opts['writeautomaticsub'] = True
-                ydl_opts['subtitleslangs'] = [request_dict.get('sub_langs', 'en')]
-            
-            # 如果请求下载指定时间段
-            if request_dict.get('download_sections'):
-                ydl_opts['download_sections'] = request_dict['download_sections']
+        # 清理文件名中的非法字符
+        safe_title = "".join(c for c in title if c.isalnum() or c in (' ', '-', '_')).rstrip()
         
-        # 执行下载
-        print(f"🔧 [DEBUG] 开始下载，进度监控已启动: {temp_video_id}")
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([url])
-        print(f"🔧 [DEBUG] 下载完成: {temp_video_id}")
+        # 智能选择格式
+        download_format = request_dict.get('format', 'best')
+        if download_format == "best":
+            download_format = "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/bv*+ba/b"
+        elif download_format == "bestaudio":
+            download_format = "ba[ext=m4a]/ba"
+        
+        # 设置输出模板
+        if request_dict.get('extract_audio', False):
+            ext = request_dict.get('audio_format', 'mp3')
+            output_template = f"{safe_title}.%(ext)s"
+        else:
+            ext = "mp4"
+            output_template = f"{safe_title}.%(ext)s"
+        
+        # 更新进度：开始下载
+        current_progress = download_progress[temp_video_id]
+        download_progress[temp_video_id] = {
+            **current_progress,
+            'status': 'downloading',
+            'message': f'正在下载: {title}',
+            'title': title,
+            'video_id': real_video_id
+        }
+        
+        # 创建进度解析器
+        progress_parser = YtDlpProgressParser(temp_video_id)
+        
+        # 构建yt-dlp命令行参数
+        cmd_args = ['yt-dlp']
+        
+        # 基本参数
+        cmd_args.extend([
+            '--format', download_format,
+            '--output', str(DOWNLOAD_DIR / output_template),
+            '--no-warnings'
+        ])
+        
+        # cookies配置
+        if COOKIES_FILE and os.path.exists(COOKIES_FILE):
+            cmd_args.extend(['--cookies', COOKIES_FILE])
+        elif COOKIES_BROWSER:
+            cmd_args.extend(['--cookies-from-browser', COOKIES_BROWSER])
+        
+        # 如果请求提取音频
+        if request_dict.get('extract_audio', False):
+            cmd_args.extend([
+                '--extract-audio',
+                '--audio-format', request_dict.get('audio_format', 'mp3')
+            ])
+        
+        # 如果请求下载字幕
+        if request_dict.get('write_subs', False):
+            cmd_args.extend([
+                '--write-subs',
+                '--write-auto-subs',
+                '--sub-langs', request_dict.get('sub_langs', 'en')
+            ])
+        
+        # 如果请求下载指定时间段
+        if request_dict.get('download_sections'):
+            cmd_args.extend(['--download-sections', request_dict['download_sections']])
+        
+        # 添加URL
+        cmd_args.append(url)
+        
+        print(f"🔧 [DEBUG] 执行yt-dlp命令: {' '.join(cmd_args)}")
+        
+        # 启动yt-dlp进程
+        ydl_process = subprocess.Popen(
+            cmd_args,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            universal_newlines=False,
+            bufsize=1
+        )
+        
+        # 启动进度监控
+        progress_parser.start_monitoring(ydl_process)
+        
+        # 等待进程完成
+        return_code = ydl_process.wait()
+        
+        print(f"🔧 [DEBUG] yt-dlp进程完成，返回码: {return_code}")
         
         # 停止进度监控
-        if progress_monitor:
-            progress_monitor.stop_monitoring_progress()
+        if progress_parser:
+            progress_parser.stop_monitoring_progress()
+        
+        if return_code != 0:
+            current_progress = download_progress[temp_video_id]
+            download_progress[temp_video_id] = {
+                **current_progress,
+                'status': 'failed',
+                'error': f'yt-dlp下载失败，返回码: {return_code}',
+                'timestamp': time.time()
+            }
+            return
         
         # 查找下载的文件
         final_filename = f"{safe_title}.{ext}"
@@ -639,8 +626,11 @@ def download_video_task_sync(url: str, request_dict: dict, temp_video_id: str):
         }
     finally:
         # 确保停止进度监控
-        if progress_monitor:
-            progress_monitor.stop_monitoring_progress()
+        if progress_parser:
+            progress_parser.stop_monitoring_progress()
+        # 确保进程被终止
+        if ydl_process and ydl_process.poll() is None:
+            ydl_process.terminate()
         # 清理线程引用
         active_download_threads.discard(current_thread)
         print(f"🔧 [BACKGROUND] 任务结束，清理线程: {temp_video_id} (thread: {current_thread.name})")
