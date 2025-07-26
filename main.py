@@ -147,68 +147,105 @@ class DownloadProgress(BaseModel):
     filename: Optional[str] = None
     error: Optional[str] = None
 
-class ProgressHook:
-    def __init__(self, video_id: str):
-        self.video_id = video_id
+class ProgressMonitor:
+    """基于文件大小监控和定时器的进度跟踪系统"""
+    
+    def __init__(self, task_id: str, expected_size: int = None):
+        self.task_id = task_id
+        self.expected_size = expected_size
+        self.monitor_thread = None
+        self.stop_monitoring = False
+        self.download_file_path = None
+        self.start_time = time.time()
+        self.last_size = 0
+        self.last_update_time = time.time()
+        self.speed_samples = []
         
-    def __call__(self, d):
-        print(f"🔧 [ProgressHook] 被调用: {self.video_id} - {d.get('status')} - {d.get('_percent_str', 'N/A')}")
-        print(f"🔧 [ProgressHook] 完整数据: {d}")
-        if d['status'] == 'downloading':
-            # 提取百分比数值
-            progress_percent = 0.0
-            if 'downloaded_bytes' in d and 'total_bytes' in d and d['total_bytes']:
-                progress_percent = d['downloaded_bytes'] / d['total_bytes']
-            elif 'downloaded_bytes' in d and 'total_bytes_estimate' in d and d['total_bytes_estimate']:
-                progress_percent = d['downloaded_bytes'] / d['total_bytes_estimate']
-            elif '_percent_str' in d:
-                # 从字符串中提取百分比数值 (例如: "2.9%" -> 0.029)
+    def start_monitoring(self, file_path: Path):
+        """开始监控下载进度"""
+        self.download_file_path = file_path
+        self.stop_monitoring = False
+        
+        def monitor_progress():
+            print(f"🔧 [ProgressMonitor] 开始监控: {self.task_id} -> {file_path}")
+            while not self.stop_monitoring:
                 try:
-                    percent_str = d['_percent_str'].strip()
-                    # 移除ANSI颜色代码
-                    percent_str = re.sub(r'\x1b\[[0-9;]*m', '', percent_str)
-                    percent_str = percent_str.replace('%', '').strip()
-                    progress_percent = float(percent_str) / 100.0
-                except:
-                    progress_percent = 0.0
-            
-            # 清理速度和ETA字符串，移除颜色代码
-            speed_str = d.get('_speed_str', 'N/A')
-            eta_str = d.get('_eta_str', 'N/A')
-            
-            if speed_str != 'N/A':
-                speed_str = re.sub(r'\x1b\[[0-9;]*m', '', speed_str).strip()
-            if eta_str != 'N/A':
-                eta_str = re.sub(r'\x1b\[[0-9;]*m', '', eta_str).strip()
-            
-            # 保留已有的非进度信息（如title、message、video_id等）
-            current_info = download_progress.get(self.video_id, {})
-            detailed_progress = {
-                **current_info,  # 保留已有信息
-                'status': 'downloading',
-                'progress_raw': d.get('_percent_str', '0%'),  # 原始进度字符串
-                'progress_decimal': round(progress_percent, 4),  # 小数形式 (0.0-1.0)
-                'progress_percentage': round(progress_percent * 100, 2),  # 百分比形式 (0-100)
-                'speed': speed_str,
-                'eta': eta_str,
-                'downloaded_bytes': d.get('downloaded_bytes', 0),
-                'total_bytes': d.get('total_bytes') or d.get('total_bytes_estimate', 0),
-                'filename': d.get('filename', ''),
-                'timestamp': time.time()
-            }
-            download_progress[self.video_id] = detailed_progress
-            print(f"🔧 [ProgressHook] 更新详细进度: {self.video_id} -> {detailed_progress.get('progress_percentage')}%")
-        elif d['status'] == 'finished':
-            # 保留已有的信息（title、message、video_id等）
-            current_info = download_progress.get(self.video_id, {})
-            download_progress[self.video_id] = {
-                **current_info,  # 保留已有信息
-                'status': 'completed',
-                'progress_decimal': 1.0,
-                'progress_percentage': 100.0,
-                'filename': d.get('filename', ''),
-                'timestamp': time.time()
-            }
+                    if file_path.exists():
+                        current_size = file_path.stat().st_size
+                        current_time = time.time()
+                        
+                        # 计算下载速度
+                        if self.last_size > 0:
+                            time_diff = current_time - self.last_update_time
+                            size_diff = current_size - self.last_size
+                            if time_diff > 0:
+                                speed_bps = size_diff / time_diff
+                                self.speed_samples.append(speed_bps)
+                                # 保持最近10个样本
+                                if len(self.speed_samples) > 10:
+                                    self.speed_samples.pop(0)
+                        
+                        # 计算平均速度
+                        avg_speed = sum(self.speed_samples) / len(self.speed_samples) if self.speed_samples else 0
+                        
+                        # 格式化速度
+                        if avg_speed > 1024 * 1024:
+                            speed_str = f"{avg_speed / (1024 * 1024):.1f}MB/s"
+                        elif avg_speed > 1024:
+                            speed_str = f"{avg_speed / 1024:.1f}KB/s"
+                        else:
+                            speed_str = f"{avg_speed:.0f}B/s"
+                        
+                        # 计算进度
+                        if self.expected_size and self.expected_size > 0:
+                            progress_decimal = min(current_size / self.expected_size, 1.0)
+                            progress_percentage = progress_decimal * 100
+                            
+                            # 计算ETA
+                            if avg_speed > 0 and current_size < self.expected_size:
+                                remaining_bytes = self.expected_size - current_size
+                                eta_seconds = remaining_bytes / avg_speed
+                                eta_str = f"{int(eta_seconds // 60):02d}:{int(eta_seconds % 60):02d}"
+                            else:
+                                eta_str = "未知"
+                        else:
+                            progress_decimal = 0.0
+                            progress_percentage = 0.0
+                            eta_str = "未知"
+                        
+                        # 更新progress信息
+                        current_info = download_progress.get(self.task_id, {})
+                        download_progress[self.task_id] = {
+                            **current_info,
+                            'status': 'downloading',
+                            'progress_decimal': round(progress_decimal, 4),
+                            'progress_percentage': round(progress_percentage, 2),
+                            'speed': speed_str,
+                            'eta': eta_str,
+                            'downloaded_bytes': current_size,
+                            'total_bytes': self.expected_size or 0,
+                            'timestamp': current_time
+                        }
+                        
+                        self.last_size = current_size
+                        self.last_update_time = current_time
+                        
+                        print(f"🔧 [ProgressMonitor] 进度更新: {self.task_id} -> {progress_percentage:.1f}% ({speed_str})")
+                        
+                    time.sleep(2)  # 每2秒更新一次
+                except Exception as e:
+                    print(f"🔧 [ProgressMonitor] 监控错误: {e}")
+                    time.sleep(2)
+                    
+        self.monitor_thread = threading.Thread(target=monitor_progress, daemon=True)
+        self.monitor_thread.start()
+        
+    def stop_monitoring_progress(self):
+        """停止监控"""
+        self.stop_monitoring = True
+        if self.monitor_thread and self.monitor_thread.is_alive():
+            self.monitor_thread.join(timeout=1)
+            print(f"🔧 [ProgressMonitor] 停止监控: {self.task_id}")
 
 @app.get("/")
 async def root():
@@ -387,6 +424,8 @@ async def download_video(request: DownloadRequest):
 def download_video_task_sync(url: str, request_dict: dict, temp_video_id: str):
     """后台下载任务"""
     current_thread = threading.current_thread()
+    progress_monitor = None
+    
     try:
         print(f"🔧 [BACKGROUND] 后台任务开始: {temp_video_id} (thread: {current_thread.name})")
         
@@ -426,6 +465,30 @@ def download_video_task_sync(url: str, request_dict: dict, temp_video_id: str):
             # 清理文件名中的非法字符
             safe_title = "".join(c for c in title if c.isalnum() or c in (' ', '-', '_')).rstrip()
             
+            # 获取预期文件大小用于进度计算
+            expected_size = None
+            if request_dict.get('format') == 'best':
+                # 尝试从不同格式中获取文件大小信息
+                for fmt in valid_formats:
+                    if fmt.get('filesize'):
+                        expected_size = fmt.get('filesize')
+                        break
+                    elif fmt.get('filesize_approx'):
+                        expected_size = fmt.get('filesize_approx')
+                        break
+                        
+            # 如果没有找到大小信息，尝试从其他字段获取
+            if not expected_size:
+                duration = info.get('duration', 0)
+                if duration:
+                    # 粗略估算：假设平均码率为1Mbps
+                    expected_size = int(duration * 125000)  # 1Mbps = 125KB/s
+                    
+            print(f"🔧 [BACKGROUND] 视频信息: {title}, 预期大小: {expected_size} bytes")
+            
+            # 创建进度监控器
+            progress_monitor = ProgressMonitor(temp_video_id, expected_size)
+            
             # 智能选择格式
             download_format = request_dict.get('format', 'best')
             if download_format == "best":
@@ -451,17 +514,21 @@ def download_video_task_sync(url: str, request_dict: dict, temp_video_id: str):
                 'video_id': real_video_id
             }
             
-            # 创建下载选项 - 移除quiet模式以确保progress_hooks工作
-            progress_hook = ProgressHook(temp_video_id)
+            # 计算预期的文件路径
+            expected_file_path = DOWNLOAD_DIR / f"{safe_title}.{ext}"
+            
+            # 启动进度监控
+            if progress_monitor:
+                progress_monitor.start_monitoring(expected_file_path)
+                print(f"🔧 [DEBUG] 进度监控已启动: {temp_video_id} -> {expected_file_path}")
+            
+            # 创建下载选项 - 使用简化的设置
             ydl_opts = get_ydl_opts({
                 'format': download_format,
                 'outtmpl': str(DOWNLOAD_DIR / output_template),
-                'quiet': False,  # 允许输出以确保progress_hooks工作
-                'no_warnings': False,  # 允许warnings以确保progress_hooks工作
-                'progress_hooks': [progress_hook],  # 直接在这里设置
+                'quiet': True,  # 安静模式，减少输出
+                'no_warnings': True,
             })
-            print(f"🔧 [DEBUG] Progress hook设置完成: {temp_video_id}")
-            print(f"🔧 [DEBUG] ydl_opts包含progress_hooks: {'progress_hooks' in ydl_opts}")
             
             # 如果请求提取音频
             if request_dict.get('extract_audio', False):
@@ -481,10 +548,14 @@ def download_video_task_sync(url: str, request_dict: dict, temp_video_id: str):
                 ydl_opts['download_sections'] = request_dict['download_sections']
         
         # 执行下载
-        print(f"🔧 [DEBUG] 开始下载，ProgressHook已注册: {temp_video_id}")
+        print(f"🔧 [DEBUG] 开始下载，进度监控已启动: {temp_video_id}")
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([url])
         print(f"🔧 [DEBUG] 下载完成: {temp_video_id}")
+        
+        # 停止进度监控
+        if progress_monitor:
+            progress_monitor.stop_monitoring_progress()
         
         # 查找下载的文件
         final_filename = f"{safe_title}.{ext}"
@@ -528,6 +599,9 @@ def download_video_task_sync(url: str, request_dict: dict, temp_video_id: str):
             'timestamp': time.time()
         }
     finally:
+        # 确保停止进度监控
+        if progress_monitor:
+            progress_monitor.stop_monitoring_progress()
         # 清理线程引用
         active_download_threads.discard(current_thread)
         print(f"🔧 [BACKGROUND] 任务结束，清理线程: {temp_video_id} (thread: {current_thread.name})")
