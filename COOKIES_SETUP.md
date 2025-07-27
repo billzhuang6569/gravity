@@ -52,26 +52,16 @@ curl -X POST -F "file=@test_cookies.txt" "http://localhost:8018/upload-cookies"
 # 安装yt-dlp (如果未安装)
 pip install yt-dlp
 
-# 确保curl可用 (Mac通常已预装)
-which curl
+# 安装requests (如果未安装)
+pip install requests
 ```
 
-#### 2.2 配置脚本
+#### 2.2 运行Python脚本
 ```bash
-# 复制配置文件
-cp cookies_config.sh upload_cookies_to_vps.sh
+# 直接运行Python脚本
+python upload_cookies_to_vps.py
 
-# 编辑配置
-nano upload_cookies_to_vps.sh
-
-# 主要修改:
-# VPS_HOST="你的VPS-IP地址"
-# VPS_PORT="8018"
-```
-
-#### 2.3 设置执行权限
-```bash
-chmod +x upload_cookies_to_vps.sh
+# 脚本会交互式地询问VPS地址和端口
 ```
 
 ## 📖 使用方法
@@ -80,13 +70,12 @@ chmod +x upload_cookies_to_vps.sh
 
 ```bash
 # 执行cookies更新
-./upload_cookies_to_vps.sh
+python upload_cookies_to_vps.py
 
-# 查看帮助
-./upload_cookies_to_vps.sh --help
-
-# 查看配置
-./upload_cookies_to_vps.sh --config
+# 脚本会交互式地询问:
+# 1. VPS IP地址或域名
+# 2. FastAPI端口 (默认8018)
+# 3. 确认配置
 ```
 
 ### 示例输出
@@ -185,7 +174,7 @@ chmod +x upload_cookies_to_vps.sh
 ### 1. 定时任务 (可选)
 ```bash
 # 添加到crontab，每周更新一次cookies
-0 2 * * 0 /path/to/upload_cookies_to_vps.sh >> /tmp/cookies_update.log 2>&1
+0 2 * * 0 cd /path/to/project && python upload_cookies_to_vps.py >> /tmp/cookies_update.log 2>&1
 ```
 
 ### 2. 监控脚本
@@ -225,11 +214,10 @@ fi
 ### 调试模式
 
 ```bash
-# 启用详细日志
-export DEBUG=1
-./upload_cookies_to_vps.sh
+# Python脚本自带详细日志输出
+python upload_cookies_to_vps.py
 
-# 查看日志文件
+# 查看临时日志 (如果有)
 tail -f /tmp/cookies_upload.log
 ```
 
