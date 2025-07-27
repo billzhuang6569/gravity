@@ -156,51 +156,92 @@ class CookiesUploader:
         timestamp = int(time.time())
         self.temp_cookies_file = f"/tmp/cookies_{timestamp}.txt"
         
-        try:
-            # 使用yt-dlp导出cookies
-            cmd = [
-                'yt-dlp',
-                '--cookies-from-browser', 'chrome',
-                '--cookies', self.temp_cookies_file,
-                'https://www.youtube.com/watch?v=dQw4w9WgXcQ'
-            ]
-            
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
-            
-            if os.path.exists(self.temp_cookies_file) and os.path.getsize(self.temp_cookies_file) > 0:
-                with open(self.temp_cookies_file, 'r') as f:
-                    line_count = len(f.readlines())
-                success(f"cookies导出成功: {line_count} 行")
-                return True
-            else:
-                error("cookies文件为空或不存在")
-                if result.stderr:
-                    error(f"错误信息: {result.stderr}")
-                return False
+        # 尝试多种方法导出cookies
+        methods = [
+            {
+                'name': 'Chrome',
+                'cmd': [
+                    'yt-dlp',
+                    '--cookies-from-browser', 'chrome',
+                    '--cookies', self.temp_cookies_file,
+                    '--no-download',
+                    '--quiet',
+                    'https://www.youtube.com/watch?v=dQw4w9WgXcQ'
+                ]
+            },
+            {
+                'name': 'Firefox',
+                'cmd': [
+                    'yt-dlp',
+                    '--cookies-from-browser', 'firefox',
+                    '--cookies', self.temp_cookies_file,
+                    '--no-download',
+                    '--quiet',
+                    'https://www.youtube.com/watch?v=dQw4w9WgXcQ'
+                ]
+            },
+            {
+                'name': 'Safari',
+                'cmd': [
+                    'yt-dlp',
+                    '--cookies-from-browser', 'safari',
+                    '--cookies', self.temp_cookies_file,
+                    '--no-download',
+                    '--quiet',
+                    'https://www.youtube.com/watch?v=dQw4w9WgXcQ'
+                ]
+            }
+        ]
+        
+        for method in methods:
+            try:
+                info(f"尝试从{method['name']}导出cookies...")
+                result = subprocess.run(method['cmd'], capture_output=True, text=True, timeout=20)
                 
-        except subprocess.TimeoutExpired:
-            error("cookies导出超时")
-            return False
-        except Exception as e:
-            error(f"cookies导出失败: {e}")
-            return False
+                if os.path.exists(self.temp_cookies_file) and os.path.getsize(self.temp_cookies_file) > 0:
+                    with open(self.temp_cookies_file, 'r') as f:
+                        line_count = len(f.readlines())
+                    success(f"从{method['name']}导出cookies成功: {line_count} 行")
+                    return True
+                else:
+                    warning(f"从{method['name']}导出失败")
+                    if result.stderr:
+                        warning(f"错误信息: {result.stderr}")
+                        
+            except subprocess.TimeoutExpired:
+                warning(f"从{method['name']}导出超时")
+                continue
+            except Exception as e:
+                warning(f"从{method['name']}导出失败: {e}")
+                continue
+        
+        error("所有浏览器都无法导出cookies")
+        info("请确保:")
+        info("1. 至少有一个浏览器已登录YouTube")
+        info("2. 浏览器没有在运行其他重要进程")
+        info("3. 网络连接正常")
+        return False
     
     def validate_cookies(self):
-        """验证cookies有效性"""
+        """验证cookies有效性 - 使用get info方式"""
         log("验证cookies有效性...")
         
         try:
+            # 使用get info方式验证，更快速
             cmd = [
                 'yt-dlp',
-                '--cookiefile', self.temp_cookies_file,
-                '--quiet',
+                '--cookies', self.temp_cookies_file,  # 修正参数名
+                '--no-download',  # 只获取信息
+                '--quiet',        # 静默模式
+                '--print', 'title',  # 只打印标题
                 'https://www.youtube.com/watch?v=dQw4w9WgXcQ'
             ]
             
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
             
-            if result.returncode == 0:
+            if result.returncode == 0 and result.stdout.strip():
                 success("cookies验证通过")
+                info(f"测试视频标题: {result.stdout.strip()}")
                 return True
             else:
                 warning("cookies验证失败，但继续上传")
