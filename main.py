@@ -15,7 +15,7 @@ from datetime import datetime
 from urllib.parse import urlparse
 
 import yt_dlp
-from fastapi import FastAPI, HTTPException, Query, BackgroundTasks, Request, Header
+from fastapi import FastAPI, HTTPException, Query, BackgroundTasks, Request, Header, UploadFile, File
 from fastapi.responses import FileResponse, StreamingResponse, JSONResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, HttpUrl, field_validator
@@ -104,13 +104,59 @@ def get_ydl_opts(base_opts: dict = None) -> dict:
     if base_opts is None:
         base_opts = {}
     
-    # 添加cookies配置
+    # 🎯 改进的cookies配置 - 支持多级fallback
+    cookies_configured = False
+    
+    # 方法1: 优先使用cookies文件
     if COOKIES_FILE and os.path.exists(COOKIES_FILE):
-        base_opts['cookiefile'] = COOKIES_FILE
-        print(f"🍪 使用cookies文件: {COOKIES_FILE}")
-    elif COOKIES_BROWSER:
-        base_opts['cookiesfrombrowser'] = (COOKIES_BROWSER,)
-        print(f"🍪 使用{COOKIES_BROWSER}浏览器cookies")
+        try:
+            # 快速验证cookies文件是否有效
+            test_opts = {**base_opts, 'cookiefile': COOKIES_FILE, 'quiet': True}
+            with yt_dlp.YoutubeDL(test_opts) as ydl:
+                # 尝试获取一个简单视频的信息来验证cookies
+                ydl.extract_info("https://www.youtube.com/watch?v=dQw4w9WgXcQ", download=False)
+            
+            base_opts['cookiefile'] = COOKIES_FILE
+            print(f"🍪 使用cookies文件: {COOKIES_FILE} (已验证)")
+            cookies_configured = True
+            
+        except Exception as e:
+            print(f"⚠️  cookies文件无效: {e}")
+    
+    # 方法2: 如果cookies文件无效，尝试浏览器cookies
+    if not cookies_configured and COOKIES_BROWSER:
+        try:
+            test_opts = {**base_opts, 'cookiesfrombrowser': (COOKIES_BROWSER,), 'quiet': True}
+            with yt_dlp.YoutubeDL(test_opts) as ydl:
+                ydl.extract_info("https://www.youtube.com/watch?v=dQw4w9WgXcQ", download=False)
+            
+            base_opts['cookiesfrombrowser'] = (COOKIES_BROWSER,)
+            print(f"🍪 使用{COOKIES_BROWSER}浏览器cookies (已验证)")
+            cookies_configured = True
+            
+        except Exception as e:
+            print(f"⚠️  {COOKIES_BROWSER}浏览器cookies无效: {e}")
+    
+    # 方法3: 如果都无效，尝试其他浏览器
+    if not cookies_configured:
+        for browser in ['chrome', 'firefox', 'safari', 'edge']:
+            if browser != COOKIES_BROWSER:  # 避免重复测试
+                try:
+                    test_opts = {**base_opts, 'cookiesfrombrowser': (browser,), 'quiet': True}
+                    with yt_dlp.YoutubeDL(test_opts) as ydl:
+                        ydl.extract_info("https://www.youtube.com/watch?v=dQw4w9WgXcQ", download=False)
+                    
+                    base_opts['cookiesfrombrowser'] = (browser,)
+                    print(f"🍪 自动切换到{browser}浏览器cookies (已验证)")
+                    cookies_configured = True
+                    break
+                    
+                except Exception:
+                    continue
+    
+    if not cookies_configured:
+        print("🚨 警告: 所有cookies都无效，可能遇到bot验证")
+        print("💡 建议: 运行 python test_cookies.py 检查cookies状态")
     
     return base_opts
 
@@ -986,6 +1032,173 @@ async def get_n8n_config():
             "disabled": "要启用n8n集成，请设置环境变量: N8N_ENABLE_COPY=true"
         }
     }
+
+@app.get("/cookies-status")
+async def get_cookies_status():
+    """获取cookies状态信息"""
+    try:
+        cookies_info = {
+            "cookies_file": COOKIES_FILE,
+            "cookies_browser": COOKIES_BROWSER,
+            "file_exists": os.path.exists(COOKIES_FILE) if COOKIES_FILE else False,
+            "status": "unknown"
+        }
+        
+        # 测试cookies有效性
+        test_url = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+        
+        # 测试cookies文件
+        if COOKIES_FILE and os.path.exists(COOKIES_FILE):
+            try:
+                ydl_opts = {'cookiefile': COOKIES_FILE, 'quiet': True}
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    ydl.extract_info(test_url, download=False)
+                cookies_info["status"] = "valid"
+                cookies_info["method"] = "file"
+            except Exception as e:
+                cookies_info["status"] = "invalid"
+                cookies_info["error"] = str(e)
+        
+        # 测试浏览器cookies
+        elif COOKIES_BROWSER:
+            try:
+                ydl_opts = {'cookiesfrombrowser': (COOKIES_BROWSER,), 'quiet': True}
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    ydl.extract_info(test_url, download=False)
+                cookies_info["status"] = "valid"
+                cookies_info["method"] = "browser"
+            except Exception as e:
+                cookies_info["status"] = "invalid"
+                cookies_info["error"] = str(e)
+        
+        # 尝试其他浏览器
+        else:
+            for browser in ['chrome', 'firefox', 'safari', 'edge']:
+                try:
+                    ydl_opts = {'cookiesfrombrowser': (browser,), 'quiet': True}
+                    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                        ydl.extract_info(test_url, download=False)
+                    cookies_info["status"] = "valid"
+                    cookies_info["method"] = f"auto_{browser}"
+                    break
+                except Exception:
+                    continue
+            else:
+                cookies_info["status"] = "no_valid_cookies"
+        
+        # 添加建议
+        if cookies_info["status"] == "valid":
+            cookies_info["suggestion"] = "cookies状态良好，可以正常使用"
+        else:
+            cookies_info["suggestion"] = "需要更新cookies，建议运行 python test_cookies.py"
+        
+        return cookies_info
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"检查cookies状态失败: {str(e)}")
+
+@app.post("/update-cookies")
+async def update_cookies_from_browser(browser: str = "chrome"):
+    """从浏览器更新cookies文件"""
+    try:
+        if browser not in ['chrome', 'firefox', 'safari', 'edge']:
+            raise HTTPException(status_code=400, detail="不支持的浏览器")
+        
+        cookies_file = COOKIES_FILE or "cookies.txt"
+        
+        # 使用yt-dlp导出cookies
+        ydl_opts = {
+            'cookiesfrombrowser': (browser,),
+            'cookiesout': cookies_file,
+            'quiet': True
+        }
+        
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            # 尝试下载一个简单视频来触发cookies导出
+            ydl.download(["https://www.youtube.com/watch?v=dQw4w9WgXcQ"])
+        
+        if os.path.exists(cookies_file):
+            file_size = os.path.getsize(cookies_file)
+            return {
+                "status": "success",
+                "message": f"cookies已从{browser}更新",
+                "cookies_file": cookies_file,
+                "file_size": file_size,
+                "suggestion": "建议运行 /cookies-status 验证cookies有效性"
+            }
+        else:
+            raise HTTPException(status_code=500, detail="cookies文件导出失败")
+            
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"更新cookies失败: {str(e)}")
+
+@app.post("/upload-cookies")
+async def upload_cookies_file(file: UploadFile = File(...)):
+    """上传cookies文件到服务器"""
+    try:
+        # 验证文件类型
+        if not file.filename or not file.filename.endswith('.txt'):
+            raise HTTPException(status_code=400, detail="只支持.txt格式的cookies文件")
+        
+        # 限制文件大小 (cookies文件通常小于1MB)
+        if file.size and file.size > 1024 * 1024:
+            raise HTTPException(status_code=400, detail="文件大小不能超过1MB")
+        
+        # 读取文件内容
+        content = await file.read()
+        content_str = content.decode('utf-8')
+        
+        # 验证cookies文件格式 (Netscape格式)
+        if not content_str.strip().startswith('# Netscape HTTP Cookie File'):
+            raise HTTPException(status_code=400, detail="无效的cookies文件格式，请使用Netscape格式")
+        
+        # 备份现有cookies文件
+        cookies_file = COOKIES_FILE or "cookies.txt"
+        backup_file = f"{cookies_file}.backup.{int(time.time())}"
+        
+        if os.path.exists(cookies_file):
+            shutil.copy2(cookies_file, backup_file)
+            print(f"📦 已备份现有cookies文件: {backup_file}")
+        
+        # 保存新的cookies文件
+        with open(cookies_file, 'wb') as f:
+            f.write(content)
+        
+        # 验证新cookies文件的有效性
+        try:
+            ydl_opts = {'cookiefile': cookies_file, 'quiet': True}
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                ydl.extract_info("https://www.youtube.com/watch?v=dQw4w9WgXcQ", download=False)
+            
+            validation_status = "valid"
+            validation_message = "cookies文件验证成功"
+            
+        except Exception as e:
+            validation_status = "invalid"
+            validation_message = f"cookies文件验证失败: {str(e)}"
+            # 恢复备份文件
+            if os.path.exists(backup_file):
+                shutil.copy2(backup_file, cookies_file)
+                print(f"🔄 已恢复备份文件: {backup_file}")
+        
+        return {
+            "status": "success",
+            "message": "cookies文件上传成功",
+            "filename": file.filename,
+            "file_size": len(content),
+            "cookies_file": cookies_file,
+            "backup_file": backup_file if os.path.exists(backup_file) else None,
+            "validation": {
+                "status": validation_status,
+                "message": validation_message
+            },
+            "suggestion": "建议运行 /cookies-status 查看详细状态"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"上传cookies文件失败: {str(e)}")
 
 def cleanup_download_threads():
     """清理所有活跃的下载线程"""
