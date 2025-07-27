@@ -69,9 +69,15 @@ echo -e "${YELLOW}3. 复制项目文件...${NC}"
 cp "$SCRIPT_DIR/main.py" "$INSTALL_DIR/"
 cp "$SCRIPT_DIR/requirements.txt" "$INSTALL_DIR/"
 
-# 如果存在其他Python文件也复制
-if [ -f "$SCRIPT_DIR/test_api.py" ]; then
-    cp "$SCRIPT_DIR/test_api.py" "$INSTALL_DIR/"
+# 复制cookies更新脚本
+if [ -f "$SCRIPT_DIR/upload_cookies_to_vps.py" ]; then
+    cp "$SCRIPT_DIR/upload_cookies_to_vps.py" "$INSTALL_DIR/"
+fi
+
+# 复制cookies更新shell脚本
+if [ -f "$SCRIPT_DIR/update_cookies.sh" ]; then
+    cp "$SCRIPT_DIR/update_cookies.sh" "$INSTALL_DIR/"
+    chmod +x "$INSTALL_DIR/update_cookies.sh"
 fi
 
 echo -e "${GREEN}✓ 项目文件复制完成${NC}"
